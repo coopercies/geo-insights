@@ -39,13 +39,35 @@ so the selection keeps its geographic context. Press **Esc** to clear.
 
 ### Cards
 
-- **Map** — choropleth or graduated points, quantile classes, adjustable opacity
+- **Map** — choropleth or graduated points, quantile classes, adjustable opacity,
+  selectable basemap
 - **Chart** — bar, histogram, scatter, time series, box plot
 - **Statistic** — count, sum, mean, median, min, max, standard deviation
 - **Table** — sortable, click to select
 - **Text** — markdown notes; double-click to edit
 
 Drag cards by their title bar, resize from the bottom-right corner.
+
+### Basemaps
+
+Set per map card under ⚙ → Basemap. Every option is key-free — no account, no
+token — which is what keeps the app deployable as static files.
+
+| Option | Use it for |
+|---|---|
+| **Match theme** (default) | CARTO Positron in light mode, Dark Matter in dark — follows the theme toggle |
+| **Positron** / **Dark Matter** | Pin one of those regardless of theme |
+| **Voyager** | Streets and labels, when you need to read the street network |
+| **OpenStreetMap** | Full detail; busy under a choropleth, but good for context |
+| **Satellite** | Esri World Imagery — verifying features against what's on the ground |
+| **None** | Solid background, data only; best for exporting figures |
+
+Positron and Dark Matter are deliberately desaturated so the choropleth carries
+the color. On Satellite, feature outlines switch to white automatically, since
+theme ink disappears against imagery.
+
+Attribution is required for OpenStreetMap and Esri and is displayed by the map
+automatically — leave it visible.
 
 ### Saving
 

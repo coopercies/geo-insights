@@ -4,11 +4,7 @@ import { useStore } from '../../store.js';
 import { SEQUENTIAL, rampSteps, INK } from '../../lib/palette.js';
 import { quantileBreaks, numericValues, formatValue } from '../../lib/stats.js';
 import { toNumber } from '../../lib/fields.js';
-
-const BASEMAPS = {
-  light: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-  dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-};
+import { resolveBasemap, basemapKey, isImagery } from '../../lib/basemaps.js';
 
 const SRC = 'data';
 const CLASS_COUNT_DEFAULT = 5;
@@ -64,16 +60,21 @@ export default function MapCard({ card }) {
     return { breaks: b, colors: rampSteps(SEQUENTIAL, b.length + 1) };
   }, [dataset, colorField, classes]);
 
+  const basemap = card.config.basemap ?? 'auto';
+  const styleKey = basemapKey(basemap, mode);
+  const appliedStyleRef = useRef(null);
+
   // --- map lifecycle -------------------------------------------------------
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: BASEMAPS[mode],
+      style: resolveBasemap(basemap, mode),
       center: [-98, 39],
       zoom: 3,
       attributionControl: { compact: true },
     });
+    appliedStyleRef.current = styleKey;
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
     map.on('load', () => setReady(true));
     map.on('error', (e) => console.error('[map]', e && e.error ? e.error.message : e));
@@ -82,17 +83,21 @@ export default function MapCard({ card }) {
     return () => {
       map.remove();
       mapRef.current = null;
+      appliedStyleRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Swapping the basemap wipes custom layers, so re-add them once it settles.
+  // Swapping the style wipes every custom layer, so drop `ready` and let the
+  // data effect rebuild them once the new style settles.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
+    if (appliedStyleRef.current === styleKey) return;
+    appliedStyleRef.current = styleKey;
     setReady(false);
-    map.setStyle(BASEMAPS[mode]);
+    map.setStyle(resolveBasemap(basemap, mode));
     map.once('styledata', () => setReady(true));
-  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [styleKey, ready, basemap, mode]);
 
   // --- data + layers -------------------------------------------------------
   useEffect(() => {
@@ -102,6 +107,10 @@ export default function MapCard({ card }) {
     const data = styledGeoJSON(dataset, colorField);
     const kind = dataset.geometryType;
     const ink = INK[mode];
+    // Theme ink disappears against imagery; force a light stroke there instead.
+    const stroke = isImagery(basemap)
+      ? { hairline: 'rgba(255,255,255,0.45)', strong: '#ffffff', ring: 'rgba(0,0,0,0.55)' }
+      : { hairline: ink.border, strong: ink.primary, ring: ink.surface };
 
     if (map.getSource(SRC)) {
       map.getSource(SRC).setData(data);
@@ -121,10 +130,10 @@ export default function MapCard({ card }) {
       map.setPaintProperty('lyr-fill', 'fill-color', fill);
       map.setPaintProperty('lyr-fill', 'fill-opacity', opacity);
       ensure({ id: 'lyr-line', type: 'line', source: SRC, paint: {} });
-      map.setPaintProperty('lyr-line', 'line-color', ink.border);
+      map.setPaintProperty('lyr-line', 'line-color', stroke.hairline);
       map.setPaintProperty('lyr-line', 'line-width', 0.5);
       ensure({ id: 'lyr-hi', type: 'line', source: SRC, paint: {}, filter: ['==', ['get', '__i'], -1] });
-      map.setPaintProperty('lyr-hi', 'line-color', ink.primary);
+      map.setPaintProperty('lyr-hi', 'line-color', stroke.strong);
       map.setPaintProperty('lyr-hi', 'line-width', 2);
     } else if (kind === 'line') {
       ensure({ id: 'lyr-line', type: 'line', source: SRC, paint: {} });
@@ -132,7 +141,7 @@ export default function MapCard({ card }) {
       map.setPaintProperty('lyr-line', 'line-width', 2);
       map.setPaintProperty('lyr-line', 'line-opacity', opacity);
       ensure({ id: 'lyr-hi', type: 'line', source: SRC, paint: {}, filter: ['==', ['get', '__i'], -1] });
-      map.setPaintProperty('lyr-hi', 'line-color', ink.primary);
+      map.setPaintProperty('lyr-hi', 'line-color', stroke.strong);
       map.setPaintProperty('lyr-hi', 'line-width', 4);
     } else {
       ensure({ id: 'lyr-circle', type: 'circle', source: SRC, paint: {} });
@@ -142,16 +151,16 @@ export default function MapCard({ card }) {
         'interpolate', ['linear'], ['zoom'], 3, 2.5, 10, 6, 16, 11,
       ]);
       map.setPaintProperty('lyr-circle', 'circle-stroke-width', 1);
-      map.setPaintProperty('lyr-circle', 'circle-stroke-color', ink.surface);
+      map.setPaintProperty('lyr-circle', 'circle-stroke-color', stroke.ring);
       ensure({ id: 'lyr-hi', type: 'circle', source: SRC, paint: {}, filter: ['==', ['get', '__i'], -1] });
       map.setPaintProperty('lyr-hi', 'circle-radius', [
         'interpolate', ['linear'], ['zoom'], 3, 4, 10, 8, 16, 13,
       ]);
       map.setPaintProperty('lyr-hi', 'circle-color', 'rgba(0,0,0,0)');
       map.setPaintProperty('lyr-hi', 'circle-stroke-width', 2.5);
-      map.setPaintProperty('lyr-hi', 'circle-stroke-color', ink.primary);
+      map.setPaintProperty('lyr-hi', 'circle-stroke-color', stroke.strong);
     }
-  }, [ready, dataset, colorField, breaks, colors, mode, card.config.opacity]);
+  }, [ready, dataset, colorField, breaks, colors, mode, basemap, card.config.opacity]);
 
   // Fit to data the first time a layer lands.
   const fittedRef = useRef(null);

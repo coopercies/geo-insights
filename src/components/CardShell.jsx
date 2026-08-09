@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store.js';
 import { STATS } from '../lib/stats.js';
+import { BASEMAP_OPTIONS } from '../lib/basemaps.js';
 import MapCard from './cards/MapCard.jsx';
 import ChartCard from './cards/ChartCard.jsx';
 import StatCard from './cards/StatCard.jsx';
@@ -69,6 +70,12 @@ function Settings({ card, dataset }) {
 
       {card.type === 'map' && (
         <>
+          <label>
+            <span>Basemap</span>
+            <select value={card.config.basemap ?? 'auto'} onChange={(e) => set({ basemap: e.target.value })}>
+              {BASEMAP_OPTIONS.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+            </select>
+          </label>
           <label>
             <span>Color by</span>
             <select value={card.config.colorField ?? ''} onChange={(e) => set({ colorField: e.target.value || null })}>
