@@ -2,6 +2,10 @@
 
 const DISTINCT_CAP = 1000;
 const DATE_HINT = /(date|time|year|month|day|_dt|timestamp)/i;
+// Coordinates are geometry, not measurement — a choropleth of longitude is
+// just a picture of west-to-east. Excluded from defaults, still selectable.
+const COORD_HINT =
+  /^(x|y|lat|lon|lng|long|latitude|longitude|point_x|point_y|x_coord|y_coord|xcoord|ycoord|easting|northing|shape_area|shape_leng|shape_length)$/i;
 const ID_HINT =
   /(^|_)(id|fid|objectid|geoid|gid|uid|guid|code|zip|zcta|fips|tract|ct\d*|bg|blockgroup|block|puma|cbsa|censustract)($|_|\d)/i;
 
@@ -76,7 +80,7 @@ export function inferFields(rows) {
       // near-unique per row are keys, not things worth summing. This only
       // steers the default field choice; the column stays selectable.
       const nearUnique = present > 20 && distinct.size / present > 0.98;
-      if (field.isKey || (allInt && nearUnique && Math.abs(field.max) >= 1000)) {
+      if (field.isKey || COORD_HINT.test(name) || (allInt && nearUnique && Math.abs(field.max) >= 1000)) {
         field.isKey = true;
       }
     }

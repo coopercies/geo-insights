@@ -41,39 +41,116 @@ export default function ChartCard({ card }) {
 
 /* ---------------------------------------------------------------- bar ---- */
 
+/**
+ * Path for a bar rounded only at its data-end, so the baseline stays square
+ * and the bar reads as anchored rather than floating.
+ */
+function barPath({ x, y, w, h, r, dir }) {
+  if (w <= 0 || h <= 0) return '';
+  if (dir === 'right') {
+    const rr = Math.max(0, Math.min(r, w, h / 2));
+    return `M${x},${y} H${x + w - rr} A${rr},${rr} 0 0 1 ${x + w},${y + rr} V${y + h - rr} A${rr},${rr} 0 0 1 ${x + w - rr},${y + h} H${x} Z`;
+  }
+  const rr = Math.max(0, Math.min(r, h, w / 2));
+  return `M${x},${y + h} V${y + rr} A${rr},${rr} 0 0 1 ${x + rr},${y} H${x + w - rr} A${rr},${rr} 0 0 1 ${x + w},${y + rr} V${y + h} Z`;
+}
+
 function BarChart({ card, dataset, rows, size, ink, mode }) {
   const select = useStore((s) => s.select);
   const selection = useStore((s) => s.selection);
   const { groupField, measureField, stat } = card.config;
+  const vertical = card.config.orientation === 'vertical';
   const [hover, setHover] = useState(null);
+
+  // Show only as many bars as can carry a readable label; the rest fold into
+  // "Other" rather than collapsing into an unreadable stack of hairlines.
+  const limit = vertical
+    ? clamp(Math.floor((size.width - PAD.left - PAD.right) / 26), 4, 20)
+    : clamp(Math.floor((size.height - PAD.top - 28) / 15), 4, 20);
 
   const data = useMemo(() => {
     if (!groupField) return [];
-    return groupBy(rows, groupField, measureField, stat);
-  }, [rows, groupField, measureField, stat]);
+    return groupBy(rows, groupField, measureField, stat, limit);
+  }, [rows, groupField, measureField, stat, limit]);
 
   if (!groupField) return <div className="card-empty">Choose a field to group by.</div>;
   if (!data.length) return <div className="card-empty">No rows in the current selection.</div>;
 
-  // Horizontal bars: category names are usually long, and this keeps them readable.
+  const activeKey = selection && selection.sourceCardId === card.id ? selection.label : null;
+  const max = Math.max(0, ...data.map((d) => d.value));
+  const fill = seriesColor(0, mode);
+
+  const onPick = (d) => select(card.id, dataset.id, d.ids, d.key);
+
+  if (vertical) {
+    // Category labels go under the axis at an angle, so they need the room.
+    const longest = Math.max(...data.map((d) => d.key.length));
+    const pad = { ...PAD, bottom: Math.min(96, 30 + Math.min(longest, 18) * 5.2) };
+    const w = size.width - pad.left - pad.right;
+    const h = size.height - pad.top - pad.bottom;
+    if (w <= 0 || h <= 0) return null;
+
+    const y = scaleLinear([0, max || 1], [h, 0]).nice();
+    const band = w / data.length;
+    const barW = Math.max(2, band - Math.max(GAP, band * 0.25));
+
+    return (
+      <svg width={size.width} height={size.height} role="img" className="chart-svg">
+        <g transform={`translate(${pad.left},${pad.top})`}>
+          {y.ticks(4).map((t) => (
+            <g key={t} transform={`translate(0,${y(t)})`}>
+              <line x1={0} x2={w} stroke={ink.grid} strokeWidth={1} />
+              <text x={-8} y={4} textAnchor="end" fill={ink.muted} fontSize={11}>{formatValue(t)}</text>
+            </g>
+          ))}
+          <line x1={0} x2={w} y1={h} y2={h} stroke={ink.axis} strokeWidth={1} />
+
+          {data.map((d, i) => {
+            const bx = i * band + (band - barW) / 2;
+            const by = y(d.value);
+            const isActive = activeKey === d.key;
+            const dim = activeKey !== null && !isActive;
+            const cx = i * band + band / 2;
+            return (
+              <g key={d.key} onClick={() => onPick(d)}
+                 onMouseEnter={() => setHover(d)} onMouseLeave={() => setHover(null)}
+                 style={{ cursor: 'pointer' }}>
+                <rect x={i * band} y={0} width={band} height={h} fill="transparent" />
+                <path d={barPath({ x: bx, y: by, w: barW, h: h - by, r: BAR_RADIUS, dir: 'up' })}
+                      fill={fill} opacity={dim ? 0.35 : 1} />
+                <text x={cx} y={h + 14} textAnchor="end" fontSize={10}
+                      fill={isActive ? ink.primary : ink.muted}
+                      transform={`rotate(-35 ${cx} ${h + 14})`}>
+                  {truncate(d.key, 18)}
+                </text>
+                {(hover === d || data.length <= 12) && (
+                  <text x={cx} y={by - 5} textAnchor="middle" fontSize={11} fill={ink.secondary}>
+                    {formatValue(d.value)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </g>
+      </svg>
+    );
+  }
+
+  // Horizontal: the safe default, since category names are usually long.
   const left = Math.min(180, Math.max(80, ...data.map((d) => d.key.length * 6.6)));
   const pad = { ...PAD, left, bottom: 28 };
   const w = size.width - pad.left - pad.right;
   const h = size.height - pad.top - pad.bottom;
   if (w <= 0 || h <= 0) return null;
 
-  const max = Math.max(0, ...data.map((d) => d.value));
   const x = scaleLinear([0, max || 1], [0, w]);
   const band = h / data.length;
   const barH = Math.max(3, band - Math.max(GAP, band * 0.25));
 
-  const activeKey = selection && selection.sourceCardId === card.id ? selection.label : null;
-  const ticks = x.ticks(4);
-
   return (
     <svg width={size.width} height={size.height} role="img" className="chart-svg">
       <g transform={`translate(${pad.left},${pad.top})`}>
-        {ticks.map((t) => (
+        {x.ticks(4).map((t) => (
           <g key={t} transform={`translate(${x(t)},0)`}>
             <line y1={0} y2={h} stroke={ink.grid} strokeWidth={1} />
             <text y={h + 16} textAnchor="middle" fill={ink.muted} fontSize={11}>{formatValue(t)}</text>
@@ -82,30 +159,24 @@ function BarChart({ card, dataset, rows, size, ink, mode }) {
         <line x1={0} x2={0} y1={0} y2={h} stroke={ink.axis} strokeWidth={1} />
 
         {data.map((d, i) => {
-          const y = i * band + (band - barH) / 2;
+          const by = i * band + (band - barH) / 2;
           const bw = Math.max(0, x(d.value));
           const isActive = activeKey === d.key;
           const dim = activeKey !== null && !isActive;
           return (
-            <g key={d.key}
-               onClick={() => select(card.id, dataset.id, d.ids, d.key)}
-               onMouseEnter={() => setHover(d)}
-               onMouseLeave={() => setHover(null)}
+            <g key={d.key} onClick={() => onPick(d)}
+               onMouseEnter={() => setHover(d)} onMouseLeave={() => setHover(null)}
                style={{ cursor: 'pointer' }}>
               {/* Full-width hit target so thin bars stay clickable. */}
               <rect x={-pad.left} y={i * band} width={w + pad.left} height={band} fill="transparent" />
-              <rect
-                x={0} y={y} width={bw} height={barH}
-                rx={Math.min(BAR_RADIUS, bw / 2)}
-                fill={seriesColor(0, mode)}
-                opacity={dim ? 0.35 : 1}
-              />
-              <text x={-8} y={y + barH / 2 + 4} textAnchor="end" fontSize={11}
+              <path d={barPath({ x: 0, y: by, w: bw, h: barH, r: BAR_RADIUS, dir: 'right' })}
+                    fill={fill} opacity={dim ? 0.35 : 1} />
+              <text x={-8} y={by + barH / 2 + 4} textAnchor="end" fontSize={11}
                     fill={isActive ? ink.primary : ink.secondary}>
                 {truncate(d.key, Math.floor(pad.left / 6.6))}
               </text>
               {(hover === d || data.length <= 12) && (
-                <text x={bw + 6} y={y + barH / 2 + 4} fontSize={11} fill={ink.secondary}>
+                <text x={bw + 6} y={by + barH / 2 + 4} fontSize={11} fill={ink.secondary}>
                   {formatValue(d.value)}
                 </text>
               )}
@@ -469,4 +540,8 @@ function ChartTip({ x, y, lines, ink }) {
 
 function truncate(s, n) {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+}
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
 }

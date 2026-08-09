@@ -176,6 +176,7 @@ function defaultConfig(type, ds) {
         xField: numeric[0]?.name ?? null,
         yField: numeric[1]?.name ?? numeric[0]?.name ?? null,
         stat: 'count',
+        orientation: 'horizontal',
       };
     case 'stat':
       return { stat: 'count', field: numeric[0]?.name ?? null, label: '' };

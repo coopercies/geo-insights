@@ -145,6 +145,17 @@ function Settings({ card, dataset }) {
             </label>
           )}
 
+          {card.config.chartType === 'bar' && (
+            <label>
+              <span>Bars</span>
+              <select value={card.config.orientation ?? 'horizontal'}
+                      onChange={(e) => set({ orientation: e.target.value })}>
+                <option value="horizontal">Horizontal</option>
+                <option value="vertical">Vertical</option>
+              </select>
+            </label>
+          )}
+
           {['bar', 'line'].includes(card.config.chartType) && (
             <label>
               <span>Aggregate</span>
