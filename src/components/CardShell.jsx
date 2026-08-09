@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store.js';
 import { STATS } from '../lib/stats.js';
 import { BASEMAP_OPTIONS } from '../lib/basemaps.js';
+import ErrorBoundary from './ErrorBoundary.jsx';
 import MapCard from './cards/MapCard.jsx';
 import ChartCard from './cards/ChartCard.jsx';
 import StatCard from './cards/StatCard.jsx';
@@ -44,7 +45,18 @@ export default function CardShell({ card }) {
       </header>
       {open && <Settings card={card} dataset={dataset} onClose={() => setOpen(false)} />}
       <div className="card-body">
-        <Body card={card} />
+        {/* Per-card, so one bad card can't take the whole dashboard down. */}
+        <ErrorBoundary
+          fallback={(err, reset) => (
+            <div className="card-empty">
+              <strong>This card hit an error</strong>
+              <span>{err.message}</span>
+              <button onClick={reset}>Try again</button>
+            </div>
+          )}
+        >
+          <Body card={card} />
+        </ErrorBoundary>
       </div>
     </div>
   );

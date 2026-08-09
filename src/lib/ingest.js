@@ -10,13 +10,41 @@ const LON_NAMES = ['longitude', 'lon', 'lng', 'long', 'x', 'xcoord', 'x_coord', 
 let seq = 0;
 const nextId = () => `ds${++seq}_${Date.now().toString(36)}`;
 
+// Parsing GeoJSON costs roughly 6x the file size in heap (measured), on top of
+// a UTF-16 copy of the text itself. Past this, the tab is killed mid-parse —
+// which looks like the page going blank, with no error to catch or report.
+const HARD_LIMIT_BYTES = 150 * 1024 * 1024;
+const SLOW_LIMIT_BYTES = 40 * 1024 * 1024;
+
+const mb = (bytes) => `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+
+export function sizeVerdict(bytes, name) {
+  if (bytes > HARD_LIMIT_BYTES) {
+    return {
+      ok: false,
+      message:
+        `${name} is ${mb(bytes)}, which is too large to open in a browser — parsing it ` +
+        `would run the tab out of memory. Reduce it first: simplify geometry at ` +
+        `mapshaper.org, drop unused columns, or aggregate points to hexes and load ` +
+        `the result.`,
+    };
+  }
+  if (bytes > SLOW_LIMIT_BYTES) {
+    return { ok: true, warning: `${name} is ${mb(bytes)} — expect a slow load and sluggish panning.` };
+  }
+  return { ok: true };
+}
+
 export async function ingestFile(file) {
   const name = file.name;
   const lower = name.toLowerCase();
 
+  const verdict = sizeVerdict(file.size, name);
+  if (!verdict.ok) throw new Error(verdict.message);
+
   if (lower.endsWith('.geojson') || lower.endsWith('.json')) {
     const text = await file.text();
-    return fromGeoJSON(JSON.parse(text), stripExt(name));
+    return fromGeoJSON(parseJSON(text, name), stripExt(name));
   }
   if (lower.endsWith('.csv') || lower.endsWith('.tsv')) {
     const text = await file.text();
@@ -56,7 +84,19 @@ export async function ingestUrl(url) {
   const name = stripExt(decodeURIComponent(url.split('/').pop() || 'remote layer'));
   if (/\.csv$/i.test(url)) return fromCSV(text, name, ',');
   if (/\.tsv$/i.test(url)) return fromCSV(text, name, '\t');
-  return fromGeoJSON(JSON.parse(text), name);
+  return fromGeoJSON(parseJSON(text, name), name);
+}
+
+/** Translate the low-level parse failures into something actionable. */
+function parseJSON(text, name) {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    if (err instanceof RangeError) {
+      throw new Error(`${name} is too large for the browser to parse — reduce it and try again.`);
+    }
+    throw new Error(`${name} isn't valid JSON: ${err.message}`);
+  }
 }
 
 function stripExt(n) {

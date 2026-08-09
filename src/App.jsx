@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Sidebar from './components/Sidebar.jsx';
 import Canvas from './components/Canvas.jsx';
 import { useStore } from './store.js';
-import { ingestFile, ingestUrl } from './lib/ingest.js';
+import { ingestFile, ingestUrl, sizeVerdict } from './lib/ingest.js';
 import { downloadProject, readProject, sizeWarning, isProjectFile } from './lib/project.js';
 
 export default function App() {
@@ -34,11 +34,14 @@ export default function App() {
             setStatus({ kind: 'ok', text: `Opened ${file.name}` });
             continue;
           }
+          const warning = sizeVerdict(file.size, file.name).warning;
           const ds = await ingestFile(file);
           addDataset(ds);
           setStatus({
             kind: 'ok',
-            text: `Added ${ds.name} — ${ds.rows.length.toLocaleString()} rows, ${ds.fields.length} fields`,
+            text: warning
+              ? `Added ${ds.name} — ${ds.rows.length.toLocaleString()} rows. ${warning}`
+              : `Added ${ds.name} — ${ds.rows.length.toLocaleString()} rows, ${ds.fields.length} fields`,
           });
         } catch (err) {
           setStatus({ kind: 'error', text: err.message });

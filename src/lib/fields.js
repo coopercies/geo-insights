@@ -1,7 +1,8 @@
 // Field type inference — decides which chart types and stats a column can drive.
 
 const DATE_HINT = /(date|time|year|month|day|_dt|timestamp)/i;
-const ID_HINT = /(^|_)(id|fid|objectid|geoid|gid|uid|guid|code|zip|fips|tract)($|_)/i;
+const ID_HINT =
+  /(^|_)(id|fid|objectid|geoid|gid|uid|guid|code|zip|zcta|fips|tract|ct\d*|bg|blockgroup|block|puma|cbsa|censustract)($|_|\d)/i;
 
 function looksNumeric(v) {
   if (v === null || v === undefined || v === '') return false;
@@ -56,17 +57,27 @@ export function inferFields(rows) {
     const field = { name, type, distinct: distinct.size, isKey: isKey && type !== 'number' ? true : ID_HINT.test(name) };
 
     if (type === 'number') {
-      let min = Infinity, max = -Infinity, count = 0;
+      let min = Infinity, max = -Infinity, count = 0, allInt = true;
       for (const r of rows) {
         const n = toNumber(r[name]);
         if (n === null) continue;
         if (n < min) min = n;
         if (n > max) max = n;
+        if (allInt && !Number.isInteger(n)) allInt = false;
         count++;
       }
       field.min = count ? min : 0;
       field.max = count ? max : 0;
       field.count = count;
+
+      // Identifiers masquerade as measures — a tract number classified into
+      // quantiles produces a meaningless choropleth. Whole numbers that are
+      // near-unique per row are keys, not things worth summing. This only
+      // steers the default field choice; the column stays selectable.
+      const nearUnique = present > 20 && distinct.size / present > 0.98;
+      if (field.isKey || (allInt && nearUnique && Math.abs(field.max) >= 1000)) {
+        field.isKey = true;
+      }
     }
     if (type === 'string') {
       field.categorical = distinct.size <= 60;
