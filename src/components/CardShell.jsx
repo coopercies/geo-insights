@@ -2,17 +2,23 @@ import { useState } from 'react';
 import { useStore } from '../store.js';
 import { STATS } from '../lib/stats.js';
 import { BASEMAP_OPTIONS } from '../lib/basemaps.js';
+import { RAMP_OPTIONS, CATEGORICAL } from '../lib/palette.js';
+import { CLASS_METHODS } from '../lib/classify.js';
 import ErrorBoundary from './ErrorBoundary.jsx';
 import MapCard from './cards/MapCard.jsx';
 import ChartCard from './cards/ChartCard.jsx';
 import StatCard from './cards/StatCard.jsx';
 import TextCard from './cards/TextCard.jsx';
+import TitleCard, { TITLE_SIZES, TITLE_ALIGN } from './cards/TitleCard.jsx';
 import TableCard from './cards/TableCard.jsx';
 
-const TITLES = { map: 'Map', chart: 'Chart', stat: 'Statistic', text: 'Text', table: 'Table' };
+const TITLES = { map: 'Map', chart: 'Chart', stat: 'Statistic', text: 'Text', table: 'Table', title: 'Title' };
 
 const CHART_TYPES = [
   { key: 'bar', label: 'Bar' },
+  { key: 'stacked', label: 'Stacked bar' },
+  { key: 'grouped', label: 'Grouped bar' },
+  { key: 'donut', label: 'Donut' },
   { key: 'histogram', label: 'Histogram' },
   { key: 'scatter', label: 'Scatter' },
   { key: 'line', label: 'Time series' },
@@ -26,7 +32,10 @@ export default function CardShell({ card }) {
   const datasets = useStore((s) => s.datasets);
   const dataset = datasets.find((d) => d.id === card.datasetId);
 
-  const Body = { map: MapCard, chart: ChartCard, stat: StatCard, text: TextCard, table: TableCard }[card.type];
+  const Body = {
+    map: MapCard, chart: ChartCard, stat: StatCard,
+    text: TextCard, table: TableCard, title: TitleCard,
+  }[card.type];
 
   return (
     <div className="card">
@@ -36,7 +45,7 @@ export default function CardShell({ card }) {
           {dataset && <span className="card-source"> · {dataset.name}</span>}
         </span>
         <span className="card-actions">
-          {card.type !== 'text' && (
+          {!['text'].includes(card.type) && (
             <button title="Settings" onClick={() => setOpen((v) => !v)} className={open ? 'on' : ''}>⚙</button>
           )}
           <button title="Duplicate" onClick={() => duplicateCard(card.id)}>⧉</button>
@@ -67,7 +76,11 @@ function Settings({ card, dataset }) {
   const datasets = useStore((s) => s.datasets);
   const set = (patch) => updateCard(card.id, { config: patch });
 
+  const mode = useStore((s) => s.mode);
   const numeric = dataset ? dataset.fields.filter((f) => f.type === 'number') : [];
+  // Identifiers and coordinates stay selectable but never seed a default.
+  const measures = numeric.filter((f) => !f.isKey);
+  const colorMode = card.config.colorMode ?? (card.config.colorField ? 'graduated' : 'single');
   // Any text or date column can be grouped on; fewest distinct values first,
   // since those make the most readable charts.
   const cats = dataset
@@ -79,12 +92,14 @@ function Settings({ card, dataset }) {
 
   return (
     <div className="card-settings">
-      <label>
-        <span>Data</span>
-        <select value={card.datasetId ?? ''} onChange={(e) => updateCard(card.id, { datasetId: e.target.value })}>
-          {datasets.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-      </label>
+      {!['title', 'text'].includes(card.type) && (
+        <label>
+          <span>Data</span>
+          <select value={card.datasetId ?? ''} onChange={(e) => updateCard(card.id, { datasetId: e.target.value })}>
+            {datasets.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </label>
+      )}
 
       {card.type === 'map' && (
         <>
@@ -95,18 +110,84 @@ function Settings({ card, dataset }) {
             </select>
           </label>
           <label>
-            <span>Color by</span>
-            <select value={card.config.colorField ?? ''} onChange={(e) => set({ colorField: e.target.value || null })}>
-              <option value="">(single color)</option>
-              {numeric.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
+            <span>Symbology</span>
+            <select value={colorMode} onChange={(e) => {
+              const next = e.target.value;
+              // Each mode wants a different kind of field, so re-seed sensibly.
+              const field = next === 'graduated' ? (measures[0]?.name ?? null)
+                : next === 'categorical' ? (cats[0]?.name ?? null)
+                : null;
+              set({ colorMode: next, colorField: field });
+            }}>
+              <option value="single">Single color</option>
+              <option value="graduated">Graduated (numeric)</option>
+              <option value="categorical">Categories (text)</option>
             </select>
           </label>
-          <label>
-            <span>Classes</span>
-            <select value={card.config.classes} onChange={(e) => set({ classes: Number(e.target.value) })}>
-              {[3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
+
+          {colorMode !== 'single' && (
+            <label>
+              <span>Color by</span>
+              <select value={card.config.colorField ?? ''} onChange={(e) => set({ colorField: e.target.value || null })}>
+                <option value="">—</option>
+                {(colorMode === 'categorical' ? cats : numeric).map((f) =>
+                  <option key={f.name} value={f.name}>{f.name}</option>)}
+              </select>
+            </label>
+          )}
+
+          {colorMode === 'graduated' && (
+            <>
+              <label>
+                <span>Ramp</span>
+                <select value={card.config.ramp ?? 'blue'} onChange={(e) => set({ ramp: e.target.value })}>
+                  {RAMP_OPTIONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Breaks</span>
+                <select value={card.config.method ?? 'quantile'} onChange={(e) => set({ method: e.target.value })}>
+                  {CLASS_METHODS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Classes</span>
+                <select value={card.config.classes ?? 5} onChange={(e) => set({ classes: Number(e.target.value) })}>
+                  {[3, 4, 5, 6, 7, 8, 9].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <label className="checkbox">
+                <span>Reverse</span>
+                <input type="checkbox" checked={!!card.config.reverseRamp}
+                       onChange={(e) => set({ reverseRamp: e.target.checked })} />
+              </label>
+            </>
+          )}
+
+          {colorMode === 'single' && (
+            <label>
+              <span>Color</span>
+              <div className="swatch-row">
+                {CATEGORICAL[mode].map((c) => (
+                  <button key={c} type="button" title={c}
+                          className={`swatch-btn${(card.config.singleColor ?? CATEGORICAL[mode][0]) === c ? ' on' : ''}`}
+                          style={{ background: c }}
+                          onClick={() => set({ singleColor: c })} />
+                ))}
+              </div>
+            </label>
+          )}
+
+          {dataset && dataset.geometryType === 'point' && (
+            <label>
+              <span>Size by</span>
+              <select value={card.config.sizeField ?? ''} onChange={(e) => set({ sizeField: e.target.value || null })}>
+                <option value="">(fixed size)</option>
+                {measures.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
+              </select>
+            </label>
+          )}
+
           <label>
             <span>Opacity</span>
             <input type="range" min="0.1" max="1" step="0.05" value={card.config.opacity ?? 0.85}
@@ -124,7 +205,7 @@ function Settings({ card, dataset }) {
             </select>
           </label>
 
-          {['bar', 'line', 'box'].includes(card.config.chartType) && (
+          {['bar', 'line', 'box', 'donut', 'stacked', 'grouped'].includes(card.config.chartType) && (
             <label>
               <span>{card.config.chartType === 'line' ? 'X axis' : 'Group by'}</span>
               <select value={card.config.groupField ?? ''} onChange={(e) => set({ groupField: e.target.value || null })}>
@@ -135,7 +216,7 @@ function Settings({ card, dataset }) {
             </label>
           )}
 
-          {['bar', 'line', 'histogram', 'box'].includes(card.config.chartType) && (
+          {['bar', 'line', 'histogram', 'box', 'donut', 'stacked', 'grouped'].includes(card.config.chartType) && (
             <label>
               <span>{card.config.chartType === 'histogram' ? 'Field' : 'Measure'}</span>
               <select value={card.config.measureField ?? ''} onChange={(e) => set({ measureField: e.target.value || null })}>
@@ -156,7 +237,17 @@ function Settings({ card, dataset }) {
             </label>
           )}
 
-          {['bar', 'line'].includes(card.config.chartType) && (
+          {['stacked', 'grouped'].includes(card.config.chartType) && (
+            <label>
+              <span>Split by</span>
+              <select value={card.config.seriesField ?? ''} onChange={(e) => set({ seriesField: e.target.value || null })}>
+                <option value="">—</option>
+                {cats.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
+              </select>
+            </label>
+          )}
+
+          {['bar', 'line', 'stacked', 'grouped', 'donut'].includes(card.config.chartType) && (
             <label>
               <span>Aggregate</span>
               <select value={card.config.stat} onChange={(e) => set({ stat: e.target.value })}>
@@ -222,11 +313,40 @@ function Settings({ card, dataset }) {
         </label>
       )}
 
-      <label>
-        <span>Title</span>
-        <input type="text" value={card.config.title ?? ''} placeholder="(automatic)"
-               onChange={(e) => set({ title: e.target.value })} />
-      </label>
+      {card.type === 'title' && (
+        <>
+          <label className="wide">
+            <span>Text</span>
+            <input type="text" value={card.config.text ?? ''} placeholder="Dashboard title"
+                   onChange={(e) => set({ text: e.target.value })} />
+          </label>
+          <label className="wide">
+            <span>Subtitle</span>
+            <input type="text" value={card.config.subtitle ?? ''} placeholder="(optional)"
+                   onChange={(e) => set({ subtitle: e.target.value })} />
+          </label>
+          <label>
+            <span>Size</span>
+            <select value={card.config.size ?? 'lg'} onChange={(e) => set({ size: e.target.value })}>
+              {TITLE_SIZES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Align</span>
+            <select value={card.config.align ?? 'left'} onChange={(e) => set({ align: e.target.value })}>
+              {TITLE_ALIGN.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </label>
+        </>
+      )}
+
+      {card.type !== 'title' && (
+        <label>
+          <span>Card title</span>
+          <input type="text" value={card.config.title ?? ''} placeholder="(automatic)"
+                 onChange={(e) => set({ title: e.target.value })} />
+        </label>
+      )}
     </div>
   );
 }

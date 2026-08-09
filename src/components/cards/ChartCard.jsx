@@ -27,6 +27,10 @@ export default function ChartCard({ card }) {
       case 'scatter': return <Scatter card={card} dataset={dataset} rows={rows} size={size} ink={ink} mode={mode} />;
       case 'line': return <LineChart card={card} dataset={dataset} rows={rows} size={size} ink={ink} mode={mode} />;
       case 'box': return <BoxPlot card={card} dataset={dataset} rows={rows} size={size} ink={ink} mode={mode} />;
+      case 'donut': return <Donut card={card} dataset={dataset} rows={rows} size={size} ink={ink} mode={mode} />;
+      case 'stacked':
+      case 'grouped':
+        return <MultiBar card={card} dataset={dataset} rows={rows} size={size} ink={ink} mode={mode} />;
       default: return <div className="card-empty">Pick a chart type.</div>;
     }
   })();
@@ -518,6 +522,224 @@ function BoxPlot({ card, dataset, rows, size, ink, mode }) {
           );
         })}
       </g>
+    </svg>
+  );
+}
+
+/* -------------------------------------------------------------- donut ---- */
+
+function Donut({ card, dataset, rows, size, ink, mode }) {
+  const select = useStore((s) => s.select);
+  const selection = useStore((s) => s.selection);
+  const { groupField, measureField, stat } = card.config;
+  const [hover, setHover] = useState(null);
+
+  // Eight slices is the palette ceiling; past that nobody can tell them apart.
+  const data = useMemo(() => {
+    if (!groupField) return [];
+    return groupBy(rows, groupField, measureField, stat, 8);
+  }, [rows, groupField, measureField, stat]);
+
+  if (!groupField) return <div className="card-empty">Choose a field to group by.</div>;
+  if (!data.length) return <div className="card-empty">No rows in the current selection.</div>;
+
+  const total = data.reduce((a, d) => a + Math.max(0, d.value), 0);
+  if (total <= 0) return <div className="card-empty">Nothing to divide — every value is zero.</div>;
+
+  const legendW = Math.min(190, Math.max(120, size.width * 0.42));
+  const plotW = size.width - legendW;
+  const cx = plotW / 2;
+  const cy = size.height / 2;
+  const outer = Math.max(10, Math.min(plotW, size.height) / 2 - 14);
+  const inner = outer * 0.58; // a donut, so the centre can carry the total
+  const activeKey = selection && selection.sourceCardId === card.id ? selection.label : null;
+
+  let angle = -Math.PI / 2;
+  const arcs = data.map((d, i) => {
+    const frac = Math.max(0, d.value) / total;
+    const a0 = angle;
+    const a1 = angle + frac * Math.PI * 2;
+    angle = a1;
+    return { d, i, a0, a1, frac };
+  });
+
+  const arcPath = (a0, a1, rIn, rOut) => {
+    // A full circle can't be drawn as a single arc — nudge it closed.
+    const span = a1 - a0;
+    const end = span >= Math.PI * 2 ? a1 - 0.0001 : a1;
+    const large = end - a0 > Math.PI ? 1 : 0;
+    const p = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+    const [x0, y0] = p(rOut, a0), [x1, y1] = p(rOut, end);
+    const [x2, y2] = p(rIn, end), [x3, y3] = p(rIn, a0);
+    return `M${x0},${y0} A${rOut},${rOut} 0 ${large} 1 ${x1},${y1} L${x2},${y2} A${rIn},${rIn} 0 ${large} 0 ${x3},${y3} Z`;
+  };
+
+  return (
+    <svg width={size.width} height={size.height} role="img" className="chart-svg">
+      {arcs.map(({ d, i, a0, a1, frac }) => {
+        const isActive = activeKey === d.key;
+        const dim = activeKey !== null && !isActive;
+        const pop = hover === d || isActive ? 3 : 0;
+        return (
+          <g key={d.key} style={{ cursor: 'pointer' }}
+             onClick={() => select(card.id, dataset.id, d.ids, d.key)}
+             onMouseEnter={() => setHover(d)} onMouseLeave={() => setHover(null)}>
+            <path d={arcPath(a0, a1, inner, outer + pop)}
+                  fill={seriesColor(i, mode)} opacity={dim ? 0.35 : 1}
+                  stroke={ink.surface} strokeWidth={2} />
+          </g>
+        );
+      })}
+      <text x={cx} y={cy - 2} textAnchor="middle" fontSize={18} fontWeight={620} fill={ink.primary}>
+        {formatValue(hover ? hover.value : total)}
+      </text>
+      <text x={cx} y={cy + 15} textAnchor="middle" fontSize={10} fill={ink.muted}>
+        {hover ? truncate(hover.key, 16) : 'total'}
+      </text>
+
+      {/* Legend carries identity, so colour is never the only channel. */}
+      {data.map((d, i) => (
+        <g key={d.key} transform={`translate(${plotW + 6},${18 + i * 18})`} style={{ cursor: 'pointer' }}
+           onClick={() => select(card.id, dataset.id, d.ids, d.key)}
+           onMouseEnter={() => setHover(d)} onMouseLeave={() => setHover(null)}>
+          <rect x={0} y={-8} width={legendW - 10} height={16} fill="transparent" />
+          <rect x={0} y={-5} width={10} height={10} rx={2} fill={seriesColor(i, mode)} />
+          <text x={16} y={4} fontSize={11} fill={ink.secondary}>
+            {truncate(d.key, Math.floor((legendW - 70) / 6.2))}
+          </text>
+          <text x={legendW - 14} y={4} fontSize={10} textAnchor="end" fill={ink.muted}>
+            {((d.value / total) * 100).toFixed(0)}%
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/* ------------------------------------------------- stacked / grouped ----- */
+
+function MultiBar({ card, dataset, rows, size, ink, mode }) {
+  const select = useStore((s) => s.select);
+  const selection = useStore((s) => s.selection);
+  const { groupField, seriesField, measureField, stat } = card.config;
+  const stacked = card.config.chartType === 'stacked';
+  const [hover, setHover] = useState(null);
+
+  const { groups, series } = useMemo(() => {
+    if (!groupField || !seriesField) return { groups: [], series: [] };
+    const primary = groupBy(rows, groupField, measureField, stat, 12);
+    const seriesTotals = new Map();
+    for (const r of rows) {
+      const k = r[seriesField] == null || r[seriesField] === '' ? '(no value)' : String(r[seriesField]);
+      seriesTotals.set(k, (seriesTotals.get(k) || 0) + 1);
+    }
+    const names = [...seriesTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k]) => k);
+    const nameSet = new Set(names);
+    const hasOther = seriesTotals.size > names.length;
+    const allNames = hasOther ? [...names, 'Other'] : names;
+
+    const byId = new Map(rows.map((r) => [r.__i, r]));
+    const out = primary.map((g) => {
+      const parts = new Map(allNames.map((n) => [n, { value: 0, ids: [] }]));
+      for (const id of g.ids) {
+        const r = byId.get(id);
+        if (!r) continue;
+        const raw = r[seriesField];
+        const k = raw == null || raw === '' ? '(no value)' : String(raw);
+        const bucket = nameSet.has(k) ? k : 'Other';
+        const p = parts.get(bucket);
+        if (!p) continue;
+        p.ids.push(id);
+        p.value += stat === 'count' || !measureField ? 1 : (toNumber(r[measureField]) ?? 0);
+      }
+      return { key: g.key, ids: g.ids, parts: allNames.map((n) => ({ name: n, ...parts.get(n) })) };
+    });
+    return { groups: out, series: allNames };
+  }, [rows, groupField, seriesField, measureField, stat]);
+
+  if (!groupField || !seriesField) {
+    return <div className="card-empty">Choose a field to group by and a field to split by.</div>;
+  }
+  if (!groups.length) return <div className="card-empty">No rows in the current selection.</div>;
+
+  const legendH = 20;
+  const longest = Math.max(...groups.map((g) => g.key.length));
+  const pad = { ...PAD, top: PAD.top + legendH, bottom: Math.min(90, 30 + Math.min(longest, 16) * 5 ) };
+  const w = size.width - pad.left - pad.right;
+  const h = size.height - pad.top - pad.bottom;
+  if (w <= 0 || h <= 0) return null;
+
+  const max = stacked
+    ? Math.max(...groups.map((g) => g.parts.reduce((a, p) => a + p.value, 0)))
+    : Math.max(...groups.flatMap((g) => g.parts.map((p) => p.value)));
+  const y = scaleLinear([0, max || 1], [h, 0]).nice();
+  const band = w / groups.length;
+  const inner = Math.max(2, band * 0.72);
+  const activeKey = selection && selection.sourceCardId === card.id ? selection.label : null;
+
+  return (
+    <svg width={size.width} height={size.height} role="img" className="chart-svg">
+      {/* legend — always present for two or more series */}
+      {series.map((s, i) => (
+        <g key={s} transform={`translate(${PAD.left + i * Math.min(110, w / series.length)},12)`}>
+          <rect x={0} y={-5} width={9} height={9} rx={2} fill={seriesColor(i, mode)} />
+          <text x={14} y={4} fontSize={10} fill={ink.secondary}>{truncate(s, 12)}</text>
+        </g>
+      ))}
+
+      <g transform={`translate(${pad.left},${pad.top})`}>
+        {y.ticks(4).map((t) => (
+          <g key={t} transform={`translate(0,${y(t)})`}>
+            <line x1={0} x2={w} stroke={ink.grid} strokeWidth={1} />
+            <text x={-8} y={4} textAnchor="end" fill={ink.muted} fontSize={11}>{formatValue(t)}</text>
+          </g>
+        ))}
+        <line x1={0} x2={w} y1={h} y2={h} stroke={ink.axis} strokeWidth={1} />
+
+        {groups.map((g, gi) => {
+          const dim = activeKey !== null && activeKey !== g.key;
+          const cx = gi * band + band / 2;
+          let acc = 0;
+          return (
+            <g key={g.key} style={{ cursor: 'pointer' }}
+               onClick={() => select(card.id, dataset.id, g.ids, g.key)}>
+              <rect x={gi * band} y={0} width={band} height={h} fill="transparent" />
+              {g.parts.map((p, si) => {
+                if (p.value <= 0) return null;
+                let x0, bw, y0, bh;
+                if (stacked) {
+                  x0 = gi * band + (band - inner) / 2;
+                  bw = inner;
+                  y0 = y(acc + p.value);
+                  bh = Math.max(0, y(acc) - y(acc + p.value) - GAP);
+                  acc += p.value;
+                } else {
+                  const each = inner / g.parts.length;
+                  x0 = gi * band + (band - inner) / 2 + si * each;
+                  bw = Math.max(1, each - GAP);
+                  y0 = y(p.value);
+                  bh = h - y(p.value);
+                }
+                return (
+                  <path key={p.name}
+                        d={barPath({ x: x0, y: y0, w: bw, h: bh, r: BAR_RADIUS, dir: 'up' })}
+                        fill={seriesColor(si, mode)} opacity={dim ? 0.35 : 1}
+                        onMouseEnter={() => setHover({ group: g.key, name: p.name, value: p.value })}
+                        onMouseLeave={() => setHover(null)} />
+                );
+              })}
+              <text x={cx} y={h + 14} textAnchor="end" fontSize={10} fill={ink.muted}
+                    transform={`rotate(-35 ${cx} ${h + 14})`}>
+                {truncate(g.key, 16)}
+              </text>
+            </g>
+          );
+        })}
+      </g>
+      {hover && (
+        <ChartTip ink={ink} x={PAD.left + 8} y={pad.top + 4}
+                  lines={[`${hover.group} · ${hover.name}`, formatValue(hover.value)]} />
+      )}
     </svg>
   );
 }

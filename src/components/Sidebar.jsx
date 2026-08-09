@@ -6,6 +6,7 @@ const CARD_BUTTONS = [
   { type: 'chart', label: 'Chart', icon: '📊' },
   { type: 'stat', label: 'Statistic', icon: '#' },
   { type: 'table', label: 'Table', icon: '▦' },
+  { type: 'title', label: 'Title', icon: 'H', needsData: false },
   { type: 'text', label: 'Text', icon: 'T', needsData: false },
 ];
 

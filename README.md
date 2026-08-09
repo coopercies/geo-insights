@@ -39,12 +39,37 @@ so the selection keeps its geographic context. Press **Esc** to clear.
 
 ### Cards
 
-- **Map** — choropleth or graduated points, quantile classes, adjustable opacity,
-  selectable basemap
-- **Chart** — bar, histogram, scatter, time series, box plot
+- **Map** — see Symbology below
+- **Chart** — bar (horizontal or vertical), stacked bar, grouped bar, donut,
+  histogram, scatter, time series, box plot
 - **Statistic** — count, sum, mean, median, min, max, standard deviation
 - **Table** — sortable, click to select
+- **Title** — headings in four sizes with an optional subtitle, for banners and
+  section breaks
 - **Text** — markdown notes; double-click to edit
+
+### Symbology
+
+Under ⚙ on a map card:
+
+- **Single colour** — one hue from the palette, for layers with nothing to encode
+- **Graduated** — a numeric field split into classes. Choose the break method
+  (quantile, equal interval, natural breaks, standard deviation), 3–9 classes,
+  one of eight sequential ramps or a blue↔red diverging ramp, and reverse it
+- **Categories** — colour by a text field. The eight most common values take the
+  categorical palette in fixed order; the rest fold into "Other" rather than
+  inventing hues nobody can distinguish
+- **Size by** — point layers can scale symbols by a measure, area-proportional
+  so the areas compare honestly rather than the radii
+
+Features with no value are painted a neutral grey rather than dropped into the
+lowest class, where they would read as a real low value. Identifier and
+coordinate columns are never chosen as a default measure — a choropleth of
+longitude is just a picture of west-to-east.
+
+Sequential ramps other than blue were generated in OKLCH from the categorical
+anchors on a shared lightness band, so each is monotonic in lightness and clears
+8:1 at its dark end against the light surface. Blue is the validated reference.
 
 Drag cards by their title bar, resize from the bottom-right corner.
 

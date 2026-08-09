@@ -72,7 +72,7 @@ export const useStore = create((set, get) => ({
     const card = {
       id,
       type,
-      datasetId: type === 'text' ? null : (ds ? ds.id : null),
+      datasetId: ['text', 'title'].includes(type) ? null : (ds ? ds.id : null),
       config: { ...defaultConfig(type, ds), ...config },
     };
     set((s) => ({
@@ -163,8 +163,13 @@ function defaultConfig(type, ds) {
   switch (type) {
     case 'map':
       return {
+        colorMode: numeric[0] ? 'graduated' : 'single',
         colorField: numeric[0]?.name ?? null,
         classes: 5,
+        method: 'quantile',
+        ramp: 'blue',
+        reverseRamp: false,
+        sizeField: null,
         basemap: 'auto',
         opacity: 0.85,
       };
@@ -177,11 +182,14 @@ function defaultConfig(type, ds) {
         yField: numeric[1]?.name ?? numeric[0]?.name ?? null,
         stat: 'count',
         orientation: 'horizontal',
+        seriesField: cats[1]?.name ?? cats[0]?.name ?? null,
       };
     case 'stat':
       return { stat: 'count', field: numeric[0]?.name ?? null, label: '' };
     case 'text':
       return { markdown: '## Notes\n\nDouble-click to edit.' };
+    case 'title':
+      return { text: '', subtitle: '', size: 'lg', align: 'left' };
     case 'table':
       return { columns: null };
     default:
@@ -195,6 +203,7 @@ function defaultBox(type) {
     case 'chart': return { w: 6, h: 9, minW: 3, minH: 5 };
     case 'stat': return { w: 3, h: 4, minW: 2, minH: 3 };
     case 'text': return { w: 4, h: 5, minW: 2, minH: 2 };
+    case 'title': return { w: 12, h: 3, minW: 2, minH: 2 };
     case 'table': return { w: 6, h: 9, minW: 3, minH: 4 };
     default: return { w: 4, h: 6, minW: 2, minH: 2 };
   }

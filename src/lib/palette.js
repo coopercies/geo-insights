@@ -13,11 +13,49 @@ export const SEQUENTIAL = [
   '#184f95', '#104281', '#0d366b',
 ];
 
-// Second sequential context, when two magnitude encodings share a page.
-export const SEQUENTIAL_ALT = [
-  '#fbdccd', '#f7bfa5', '#f4a37e', '#f08757', '#eb6834',
-  '#d95926', '#bf4c1f', '#a03f19', '#822f10',
+/**
+ * Single-hue sequential ramps, light → dark. Blue is the skill's validated
+ * reference; the rest were generated in OKLCH from the categorical anchors on
+ * a matched lightness band, so every ramp reads with the same structure.
+ * All are monotonic in lightness and clear 8:1 at the dark end against the
+ * light surface.
+ */
+export const RAMPS = {
+  blue: SEQUENTIAL,
+  orange: ['#ffcbab', '#ffae86', '#ff9465', '#ff7c49', '#e96936', '#cd5b2e', '#ae512d', '#8c4930', '#6a4133'],
+  teal: ['#adf8d2', '#85e8b9', '#5fd6a2', '#3dc38d', '#22af7b', '#1a996b', '#24835d', '#2e6c50', '#335645'],
+  green: ['#b7f9b1', '#95e98e', '#75d76e', '#5bc454', '#47af42', '#3d9938', '#398335', '#396c35', '#385636'],
+  yellow: ['#ffdb95', '#ffc366', '#f4ac34', '#e29700', '#cc8400', '#b47300', '#986400', '#7c5617', '#5f4928'],
+  magenta: ['#ffcce5', '#ffb0d1', '#ff97bd', '#ed80a9', '#d76e96', '#bd5f83', '#a05470', '#824a5f', '#63424d'],
+  violet: ['#dbdcff', '#c5c4ff', '#b0adff', '#9d97ff', '#8a84f5', '#7973d8', '#6864b6', '#585691', '#49496c'],
+  red: ['#ffc4bb', '#ffa59c', '#ff8880', '#ff6e69', '#f35b57', '#d64e4b', '#b54743', '#91433f', '#6d3e3a'],
+};
+
+// Two poles that read as opposite, with a neutral midpoint that reads as
+// "nothing". The midpoint tracks the surface, so it recedes in either mode.
+export const DIVERGING_RAMP = {
+  light: ['#184f95', '#2163b5', '#2a78d6', '#9abbe6', '#f0efec', '#e6928a', '#d03b3b', '#af3030', '#8f2626'],
+  dark: ['#184f95', '#2163b5', '#2a78d6', '#38567b', '#383835', '#8b413b', '#d03b3b', '#af3030', '#8f2626'],
+};
+
+export const RAMP_OPTIONS = [
+  { id: 'blue', label: 'Blue (sequential)' },
+  { id: 'teal', label: 'Teal (sequential)' },
+  { id: 'green', label: 'Green (sequential)' },
+  { id: 'orange', label: 'Orange (sequential)' },
+  { id: 'yellow', label: 'Yellow (sequential)' },
+  { id: 'red', label: 'Red (sequential)' },
+  { id: 'magenta', label: 'Magenta (sequential)' },
+  { id: 'violet', label: 'Violet (sequential)' },
+  { id: 'diverging', label: 'Blue ↔ Red (diverging)' },
 ];
+
+/** Steps for a named ramp, sampled to `n` classes and optionally reversed. */
+export function rampFor(id, n, mode = 'light', reverse = false) {
+  const base = id === 'diverging' ? DIVERGING_RAMP[mode] : (RAMPS[id] || RAMPS.blue);
+  const steps = rampSteps(base, n);
+  return reverse ? [...steps].reverse() : steps;
+}
 
 export const DIVERGING = {
   low: '#2a78d6',

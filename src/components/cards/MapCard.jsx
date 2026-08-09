@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
 import { useStore } from '../../store.js';
-import { SEQUENTIAL, rampSteps, INK } from '../../lib/palette.js';
-import { quantileBreaks, numericValues, formatValue } from '../../lib/stats.js';
+import { SEQUENTIAL, rampSteps, rampFor, seriesColor, INK } from '../../lib/palette.js';
+import { classBreaks, categoryClasses } from '../../lib/classify.js';
+import { numericValues, formatValue } from '../../lib/stats.js';
 import { toNumber } from '../../lib/fields.js';
 import { resolveBasemap, basemapKey, isImagery } from '../../lib/basemaps.js';
 
@@ -61,29 +62,66 @@ function webglAvailable() {
 
 /** Rebuild source data carrying only the id and the styling value — keeps the
  *  GL source small even when the table has 200 columns. */
-function styledGeoJSON(dataset, colorField) {
+const NO_DATA = '#b8b6ae';
+
+/**
+ * Source data carries only what the paint expressions read: the row id, the
+ * numeric value being classed (`__v`), the category slot (`__c`), and the
+ * numeric value driving symbol size (`__s`). Keeps the GL source small even
+ * when the table has 200 columns.
+ */
+function styledGeoJSON(dataset, { colorMode, colorField, sizeField, categoryIndex }) {
   const byId = new Map(dataset.rows.map((r) => [r.__i, r]));
   return {
     type: 'FeatureCollection',
     features: dataset.geojson.features.map((f) => {
       const row = byId.get(f.properties.__i);
-      const v = colorField && row ? toNumber(row[colorField]) : null;
-      return {
-        type: 'Feature',
-        id: f.id,
-        geometry: f.geometry,
-        properties: { __i: f.properties.__i, __v: v === null ? undefined : v },
-      };
+      const props = { __i: f.properties.__i };
+
+      if (row && colorMode === 'graduated' && colorField) {
+        const v = toNumber(row[colorField]);
+        if (v !== null) props.__v = v;
+      }
+      if (row && colorMode === 'categorical' && colorField) {
+        const raw = row[colorField];
+        const key = raw === null || raw === undefined || raw === '' ? '(no value)' : String(raw);
+        // Anything outside the palette ceiling lands in the "Other" slot.
+        props.__c = categoryIndex.has(key) ? categoryIndex.get(key) : categoryIndex.get('__other__') ?? -1;
+      }
+      if (row && sizeField) {
+        const s = toNumber(row[sizeField]);
+        if (s !== null) props.__s = s;
+      }
+      return { type: 'Feature', id: f.id, geometry: f.geometry, properties: props };
     }),
   };
 }
 
-function colorExpression(breaks, colors) {
+function graduatedExpression(breaks, colors) {
   if (!breaks.length) return colors[Math.floor(colors.length / 2)];
-  const expr = ['step', ['coalesce', ['get', '__v'], -Infinity], colors[0]];
+  const expr = ['step', ['get', '__v'], colors[0]];
   breaks.forEach((b, i) => expr.push(b, colors[i + 1]));
-  // Features with no value fall in the first step; paint them neutral instead.
-  return ['case', ['==', ['get', '__v'], null], '#b8b6ae', expr];
+  // Features with no value would otherwise fall into the first class and read
+  // as a real low value; paint them neutral instead.
+  return ['case', ['==', ['get', '__v'], null], NO_DATA, expr];
+}
+
+function categoricalExpression(classList, mode) {
+  const expr = ['match', ['get', '__c']];
+  classList.forEach((c, i) => expr.push(i, seriesColor(i, mode)));
+  expr.push(NO_DATA);
+  return expr;
+}
+
+/** Symbol radius interpolated from a measure — area-proportional, not radius. */
+function sizeExpression(min, max) {
+  if (min === max) return ['interpolate', ['linear'], ['zoom'], 3, 2.5, 10, 6, 16, 11];
+  return [
+    'interpolate', ['linear'], ['zoom'],
+    3, ['interpolate', ['linear'], ['sqrt', ['max', ['coalesce', ['get', '__s'], min], 0]], Math.sqrt(Math.max(min, 0)), 1.5, Math.sqrt(Math.max(max, 0)), 7],
+    10, ['interpolate', ['linear'], ['sqrt', ['max', ['coalesce', ['get', '__s'], min], 0]], Math.sqrt(Math.max(min, 0)), 3, Math.sqrt(Math.max(max, 0)), 18],
+    16, ['interpolate', ['linear'], ['sqrt', ['max', ['coalesce', ['get', '__s'], min], 0]], Math.sqrt(Math.max(min, 0)), 5, Math.sqrt(Math.max(max, 0)), 34],
+  ];
 }
 
 export default function MapCard({ card }) {
@@ -108,14 +146,45 @@ export default function MapCard({ card }) {
 
   const dataset = datasets.find((d) => d.id === card.datasetId);
   const colorField = card.config.colorField;
+  const colorMode = card.config.colorMode ?? (colorField ? 'graduated' : 'single');
   const classes = card.config.classes ?? CLASS_COUNT_DEFAULT;
+  const method = card.config.method ?? 'quantile';
+  const rampId = card.config.ramp ?? 'blue';
+  const reverse = !!card.config.reverseRamp;
+  const singleColor = card.config.singleColor ?? seriesColor(0, mode);
+  const sizeField = card.config.sizeField ?? null;
 
+  // Graduated classing.
   const { breaks, colors } = useMemo(() => {
-    if (!dataset || !colorField) return { breaks: [], colors: rampSteps(SEQUENTIAL, 5) };
+    if (!dataset || colorMode !== 'graduated' || !colorField) {
+      return { breaks: [], colors: rampFor(rampId, classes, mode, reverse) };
+    }
     const vals = numericValues(dataset.rows, colorField);
-    const b = quantileBreaks(vals, classes);
-    return { breaks: b, colors: rampSteps(SEQUENTIAL, b.length + 1) };
-  }, [dataset, colorField, classes]);
+    const b = classBreaks(vals, classes, method);
+    return { breaks: b, colors: rampFor(rampId, b.length + 1, mode, reverse) };
+  }, [dataset, colorMode, colorField, classes, method, rampId, mode, reverse]);
+
+  // Categorical classing.
+  const categories = useMemo(() => {
+    if (!dataset || colorMode !== 'categorical' || !colorField) return [];
+    return categoryClasses(dataset.rows, colorField, 8);
+  }, [dataset, colorMode, colorField]);
+
+  const categoryIndex = useMemo(() => {
+    const m = new Map();
+    categories.forEach((c, i) => {
+      m.set(c.key, i);
+      if (c.isOther) m.set('__other__', i);
+    });
+    return m;
+  }, [categories]);
+
+  // Symbol-size range.
+  const sizeRange = useMemo(() => {
+    if (!dataset || !sizeField) return null;
+    const vals = numericValues(dataset.rows, sizeField);
+    return vals.length ? [Math.min(...vals), Math.max(...vals)] : null;
+  }, [dataset, sizeField]);
 
   const basemap = card.config.basemap ?? 'auto';
   const styleKey = basemapKey(basemap, mode);
@@ -241,7 +310,7 @@ export default function MapCard({ card }) {
     const map = mapRef.current;
     if (!map || !ready || !dataset || !dataset.geojson) return;
 
-    const data = styledGeoJSON(dataset, colorField);
+    const data = styledGeoJSON(dataset, { colorMode, colorField, sizeField, categoryIndex });
     const kind = dataset.geometryType;
     const ink = INK[mode];
     // Theme ink disappears against imagery; force a light stroke there instead.
@@ -255,8 +324,14 @@ export default function MapCard({ card }) {
       map.addSource(SRC, { type: 'geojson', data, promoteId: '__i' });
     }
 
-    const fill = colorExpression(breaks, colors);
+    const fill =
+      colorMode === 'categorical' && categories.length ? categoricalExpression(categories, mode)
+      : colorMode === 'graduated' && colorField ? graduatedExpression(breaks, colors)
+      : singleColor;
     const opacity = card.config.opacity ?? 0.85;
+    const radius = sizeField && sizeRange
+      ? sizeExpression(sizeRange[0], sizeRange[1])
+      : ['interpolate', ['linear'], ['zoom'], 3, 2.5, 10, 6, 16, 11];
 
     const ensure = (spec) => {
       if (!map.getLayer(spec.id)) map.addLayer(spec);
@@ -284,9 +359,7 @@ export default function MapCard({ card }) {
       ensure({ id: 'lyr-circle', type: 'circle', source: SRC, paint: {} });
       map.setPaintProperty('lyr-circle', 'circle-color', fill);
       map.setPaintProperty('lyr-circle', 'circle-opacity', opacity);
-      map.setPaintProperty('lyr-circle', 'circle-radius', [
-        'interpolate', ['linear'], ['zoom'], 3, 2.5, 10, 6, 16, 11,
-      ]);
+      map.setPaintProperty('lyr-circle', 'circle-radius', radius);
       map.setPaintProperty('lyr-circle', 'circle-stroke-width', 1);
       map.setPaintProperty('lyr-circle', 'circle-stroke-color', stroke.ring);
       ensure({ id: 'lyr-hi', type: 'circle', source: SRC, paint: {}, filter: ['==', ['get', '__i'], -1] });
@@ -297,7 +370,8 @@ export default function MapCard({ card }) {
       map.setPaintProperty('lyr-hi', 'circle-stroke-width', 2.5);
       map.setPaintProperty('lyr-hi', 'circle-stroke-color', stroke.strong);
     }
-  }, [ready, dataset, colorField, breaks, colors, mode, basemap, card.config.opacity]);
+  }, [ready, dataset, colorMode, colorField, breaks, colors, categories, categoryIndex,
+      singleColor, sizeField, sizeRange, mode, basemap, card.config.opacity]);
 
   // Fit to data the first time a layer lands.
   const fittedRef = useRef(null);
@@ -453,8 +527,15 @@ export default function MapCard({ card }) {
     <div className="map-wrap">
       <div ref={containerRef} className="map-canvas" />
       <div ref={boxRef} className="map-selectbox" />
-      {colorField && breaks.length > 0 && (
-        <Legend field={colorField} breaks={breaks} colors={colors} />
+      {colorMode === 'graduated' && colorField && breaks.length > 0 && (
+        <GraduatedLegend field={colorField} breaks={breaks} colors={colors} />
+      )}
+      {colorMode === 'categorical' && colorField && categories.length > 0 && (
+        <CategoryLegend field={colorField} categories={categories} mode={mode} />
+      )}
+      {sizeField && sizeRange && dataset.geometryType === 'point' && (
+        <SizeLegend field={sizeField} range={sizeRange}
+                    color={colorMode === 'single' ? singleColor : seriesColor(0, mode)} />
       )}
       {!slowTiles && (
         <div className="map-hint">Shift-drag to select · click a feature · click empty space to clear</div>
@@ -479,7 +560,7 @@ export default function MapCard({ card }) {
   );
 }
 
-function Legend({ field, breaks, colors }) {
+function GraduatedLegend({ field, breaks, colors }) {
   const labels = colors.map((c, i) => {
     const lo = i === 0 ? null : breaks[i - 1];
     const hi = i === colors.length - 1 ? null : breaks[i];
@@ -496,6 +577,45 @@ function Legend({ field, breaks, colors }) {
           <span>{labels[i]}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function CategoryLegend({ field, categories, mode }) {
+  return (
+    <div className="map-legend">
+      <div className="map-legend-title">{field}</div>
+      {categories.map((c, i) => (
+        <div key={c.key} className="map-legend-row">
+          <span className="swatch" style={{ background: seriesColor(i, mode) }} />
+          <span title={c.key}>{c.key.length > 22 ? `${c.key.slice(0, 21)}…` : c.key}</span>
+          <span className="legend-count">{c.count.toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Nested circles, since size legends read better as area than as a list. */
+function SizeLegend({ field, range, color }) {
+  const [min, max] = range;
+  const mid = min + (max - min) / 2;
+  const r = (v) => {
+    if (max === min) return 10;
+    return 4 + (Math.sqrt(Math.max(v, 0)) - Math.sqrt(Math.max(min, 0))) /
+      (Math.sqrt(Math.max(max, 0)) - Math.sqrt(Math.max(min, 0)) || 1) * 12;
+  };
+  return (
+    <div className="map-legend map-legend-size">
+      <div className="map-legend-title">{field}</div>
+      <svg width={78} height={40} aria-hidden="true">
+        {[max, mid, min].map((v, i) => (
+          <circle key={i} cx={20} cy={36 - r(v)} r={r(v)}
+                  fill="none" stroke={color} strokeWidth={1.5} opacity={0.9} />
+        ))}
+        <text x={42} y={12} fontSize={9} fill="currentColor">{formatValue(max)}</text>
+        <text x={42} y={36} fontSize={9} fill="currentColor">{formatValue(min)}</text>
+      </svg>
     </div>
   );
 }
