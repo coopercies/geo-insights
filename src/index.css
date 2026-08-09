@@ -380,6 +380,21 @@ code {
   font-size: 12px; line-height: 1.55; color: var(--ink-secondary);
 }
 
+.map-trouble button { margin-top: 6px; }
+
+.map-notice {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 5;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 10.5px;
+  color: var(--ink-secondary);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 .map-loading {
   position: absolute; inset: 0; z-index: 3;
   display: grid; place-items: center;

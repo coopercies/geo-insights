@@ -10,6 +10,45 @@ const SRC = 'data';
 const CLASS_COUNT_DEFAULT = 5;
 const STYLE_TIMEOUT_MS = 12000;
 
+/**
+ * Ask the network what actually happened, rather than guessing in the message.
+ * A blocked request and a slow one look identical from inside MapLibre, but a
+ * direct fetch tells them apart: extensions and blockers reject at the network
+ * layer, which surfaces as a TypeError rather than an HTTP status.
+ */
+async function diagnoseBasemap(basemap, mode) {
+  const style = resolveBasemap(basemap, mode);
+  const url = typeof style === 'string'
+    ? style
+    : (style.sources && style.sources.base && style.sources.base.tiles || [])[0];
+
+  if (!url) return 'The basemap style could not be resolved.';
+
+  const probe = url.replace('{z}', '3').replace('{x}', '2').replace('{y}', '3');
+  try {
+    const res = await fetch(probe, { mode: 'cors', cache: 'no-store' });
+    if (res.ok) {
+      return `The tile host answered (HTTP ${res.status}), but the map never finished ` +
+        `drawing. This is usually WebGL being blocked or throttled — try reloading, ` +
+        `or check that hardware acceleration is enabled.`;
+    }
+    return `The tile host returned HTTP ${res.status} for ${hostOf(probe)}. ` +
+      `The service may be down or rate-limiting.`;
+  } catch {
+    return `The request to ${hostOf(probe)} was refused before it reached the network. ` +
+      `That is almost always a content blocker, privacy extension, or VPN — ` +
+      `allow that host, or carry on without a basemap.`;
+  }
+}
+
+function hostOf(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return 'the tile host';
+  }
+}
+
 /** WebGL is required. Without it MapLibre throws and the card would sit blank. */
 function webglAvailable() {
   try {
@@ -52,14 +91,20 @@ export default function MapCard({ card }) {
   const mapRef = useRef(null);
   const boxRef = useRef(null);
   const dragRef = useRef(null);
+  // `ready` means the style is parsed and layers can be added — deliberately
+  // NOT the map's `load` event, which also waits on basemap tiles. Gating data
+  // layers on tiles means a blocked basemap host costs you your own data too.
   const [ready, setReady] = useState(false);
+  const [tilesOk, setTilesOk] = useState(false);
   const [hover, setHover] = useState(null);
   const [trouble, setTrouble] = useState(null);
+  const [slowTiles, setSlowTiles] = useState(false);
 
   const datasets = useStore((s) => s.datasets);
   const selection = useStore((s) => s.selection);
   const mode = useStore((s) => s.mode);
   const select = useStore((s) => s.select);
+  const updateCard = useStore((s) => s.updateCard);
 
   const dataset = datasets.find((d) => d.id === card.datasetId);
   const colorField = card.config.colorField;
@@ -106,13 +151,22 @@ export default function MapCard({ card }) {
 
     appliedStyleRef.current = styleKey;
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
-    map.on('load', () => {
-      setReady(true);
-      setTrouble(null);
-    });
-    // Tile hiccups on a working map are noise; a failure before the map ever
-    // loads is the thing worth surfacing, so record it and let the render
-    // decide (it only shows while `ready` is false).
+
+    // styledata fires once the stylesheet is parsed — early enough to add our
+    // sources and layers, and it doesn't depend on any tile arriving.
+    const onStyleData = () => {
+      const style = map.getStyle();
+      if (style && style.layers) {
+        setReady(true);
+        setTrouble(null);
+      }
+    };
+    map.on('styledata', onStyleData);
+    map.on('load', () => setTilesOk(true));
+
+    // A tile hiccup on a working map is noise; a failure before anything
+    // renders is worth surfacing. The render decides — it only shows this
+    // while the style is still missing.
     map.on('error', (e) => {
       const msg = e && e.error ? e.error.message : String(e);
       console.error('[map]', msg);
@@ -127,20 +181,30 @@ export default function MapCard({ card }) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A map that never reports `load` leaves a blank card with no explanation.
+  // A style that never arrives leaves a blank card with no explanation. Probe
+  // the host directly so the message names the real cause instead of guessing.
   useEffect(() => {
-    if (ready || trouble) return;
-    const t = setTimeout(() => {
+    if (ready || trouble || basemap === 'none') return;
+    const t = setTimeout(async () => {
       setTrouble({
-        title: 'The basemap is taking too long',
-        detail:
-          'Tiles are fetched from an external host. A content blocker, VPN, or ' +
-          'offline network will stop them. Data layers still work — switch the ' +
-          'basemap to "None" to work without one.',
+        title: 'The basemap did not load',
+        detail: await diagnoseBasemap(basemap, mode),
+        offerNoBasemap: true,
       });
     }, STYLE_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [ready, trouble]);
+  }, [ready, trouble, basemap, mode]);
+
+  // Style parsed but tiles never arrived: the data is drawn and usable, so this
+  // is a footnote rather than an overlay. Delayed so it can't flash on a normal load.
+  useEffect(() => {
+    if (!ready || tilesOk || basemap === 'none') {
+      setSlowTiles(false);
+      return;
+    }
+    const t = setTimeout(() => setSlowTiles(true), STYLE_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [ready, tilesOk, basemap]);
 
   // Swapping the style wipes every custom layer, so drop `ready` and let the
   // data effect rebuild them once the new style settles.
@@ -150,8 +214,10 @@ export default function MapCard({ card }) {
     if (appliedStyleRef.current === styleKey) return;
     appliedStyleRef.current = styleKey;
     setReady(false);
+    setTilesOk(false);
+    setTrouble(null);
+    // The persistent styledata listener flips `ready` back on once it parses.
     map.setStyle(resolveBasemap(basemap, mode));
-    map.once('styledata', () => setReady(true));
   }, [styleKey, ready, basemap, mode]);
 
   // --- data + layers -------------------------------------------------------
@@ -380,9 +446,17 @@ export default function MapCard({ card }) {
         <div className="map-trouble">
           <div className="map-trouble-title">{trouble.title}</div>
           <p>{trouble.detail}</p>
+          {trouble.offerNoBasemap && (
+            <button className="btn-primary" onClick={() => updateCard(card.id, { config: { basemap: 'none' } })}>
+              Continue without a basemap
+            </button>
+          )}
         </div>
       )}
       {!ready && !trouble && <div className="map-loading">Loading basemap…</div>}
+      {slowTiles && (
+        <div className="map-notice">Basemap tiles unavailable — showing your data only</div>
+      )}
     </div>
   );
 }
