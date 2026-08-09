@@ -135,47 +135,63 @@ export default function MapCard({ card }) {
       return;
     }
 
-    let map;
-    try {
-      map = new MapLibreMap({
-        container: containerRef.current,
-        style: resolveBasemap(basemap, mode),
-        center: [-98, 39],
-        zoom: 3,
-        attributionControl: { compact: true },
-      });
-    } catch (err) {
-      setTrouble({ title: 'The map could not start', detail: err.message });
-      return;
-    }
+    // StrictMode mounts, unmounts, and remounts every effect in development.
+    // Constructing a map only to remove() it milliseconds later tears down
+    // MapLibre's shared worker pool, and the replacement map can come up with
+    // no render loop at all — a black canvas that never requests a tile and
+    // never reports an error. Deferring construction by a tick means the
+    // throwaway mount is cancelled before any map exists, so exactly one is
+    // ever built.
+    let map = null;
+    let cancelled = false;
 
-    appliedStyleRef.current = styleKey;
-    map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
+    const timer = setTimeout(() => {
+      if (cancelled || !containerRef.current) return;
 
-    // styledata fires once the stylesheet is parsed — early enough to add our
-    // sources and layers, and it doesn't depend on any tile arriving.
-    const onStyleData = () => {
-      const style = map.getStyle();
-      if (style && style.layers) {
-        setReady(true);
-        setTrouble(null);
+      try {
+        map = new MapLibreMap({
+          container: containerRef.current,
+          style: resolveBasemap(basemap, mode),
+          center: [-98, 39],
+          zoom: 3,
+          attributionControl: { compact: true },
+        });
+      } catch (err) {
+        setTrouble({ title: 'The map could not start', detail: err.message });
+        return;
       }
-    };
-    map.on('styledata', onStyleData);
-    map.on('load', () => setTilesOk(true));
 
-    // A tile hiccup on a working map is noise; a failure before anything
-    // renders is worth surfacing. The render decides — it only shows this
-    // while the style is still missing.
-    map.on('error', (e) => {
-      const msg = e && e.error ? e.error.message : String(e);
-      console.error('[map]', msg);
-      setTrouble({ title: 'The basemap failed to load', detail: msg });
-    });
-    mapRef.current = map;
-    if (import.meta.env.DEV) window.__map = map;
+      appliedStyleRef.current = styleKey;
+      map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
+
+      // styledata fires once the stylesheet is parsed — early enough to add our
+      // sources and layers, and it doesn't depend on any tile arriving.
+      map.on('styledata', () => {
+        const style = map.getStyle();
+        if (style && style.layers) {
+          setReady(true);
+          setTrouble(null);
+        }
+      });
+      map.on('load', () => setTilesOk(true));
+
+      // A tile hiccup on a working map is noise; a failure before anything
+      // renders is worth surfacing. The render decides — it only shows this
+      // while the style is still missing.
+      map.on('error', (e) => {
+        const msg = e && e.error ? e.error.message : String(e);
+        console.error('[map]', msg);
+        setTrouble({ title: 'The basemap failed to load', detail: msg });
+      });
+
+      mapRef.current = map;
+      if (import.meta.env.DEV) window.__map = map;
+    }, 0);
+
     return () => {
-      map.remove();
+      cancelled = true;
+      clearTimeout(timer);
+      if (map) map.remove();
       mapRef.current = null;
       appliedStyleRef.current = null;
     };
@@ -440,7 +456,9 @@ export default function MapCard({ card }) {
       {colorField && breaks.length > 0 && (
         <Legend field={colorField} breaks={breaks} colors={colors} />
       )}
-      <div className="map-hint">Shift-drag to select · click a feature · click empty space to clear</div>
+      {!slowTiles && (
+        <div className="map-hint">Shift-drag to select · click a feature · click empty space to clear</div>
+      )}
       {hover && <HoverCard hover={hover} colorField={colorField} />}
       {!ready && trouble && (
         <div className="map-trouble">

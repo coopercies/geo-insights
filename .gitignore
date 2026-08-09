@@ -23,5 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 
-# Local test data — keep sample layers out of the published repo
+# Local test data — never publish sample layers to the repo
 public/*.geojson
+public/*.json
+public/*.csv
+public/*.tsv
+public/*.zip
+!public/vite.svg

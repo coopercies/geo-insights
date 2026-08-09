@@ -117,3 +117,16 @@ site at `https://<user>.github.io/<repo>/` works without configuration.
 
 MapLibre GL (maps, no API key), CARTO basemaps, React, Vite, Zustand, Papa Parse,
 shpjs. Charts are hand-rolled SVG so every mark can drive a selection.
+
+### Why MapLibre is pinned
+
+`maplibre-gl` is pinned to an exact **5.24.0** — not a range. On 6.x the map
+initialises without error and reports healthy state (style parsed, valid camera
+transform, workers attached, frames rendering) but never creates a single tile
+for any source, so nothing draws: a black canvas, no errors, no failed requests.
+Version 6 also removed the default export and renamed internals
+(`sourceCaches` → `tileManagers`, `map.transform` → `map._camera.transform`).
+
+Moving to 6.x means working through its migration guide and re-verifying that
+tiles actually render — not just that the app builds. Don't let a caret range
+pick up the major on its own.
