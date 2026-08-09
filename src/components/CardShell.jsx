@@ -68,7 +68,13 @@ function Settings({ card, dataset }) {
   const set = (patch) => updateCard(card.id, { config: patch });
 
   const numeric = dataset ? dataset.fields.filter((f) => f.type === 'number') : [];
-  const cats = dataset ? dataset.fields.filter((f) => f.type === 'string' && f.categorical) : [];
+  // Any text or date column can be grouped on; fewest distinct values first,
+  // since those make the most readable charts.
+  const cats = dataset
+    ? dataset.fields
+        .filter((f) => f.type === 'string' || f.type === 'date')
+        .sort((a, b) => (a.distinct ?? 0) - (b.distinct ?? 0))
+    : [];
   const dates = dataset ? dataset.fields.filter((f) => f.type === 'date' || f.type === 'number') : [];
 
   return (

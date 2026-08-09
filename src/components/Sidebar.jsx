@@ -61,7 +61,11 @@ export default function Sidebar({ onFiles }) {
                       {f.type === 'number' && (
                         <span className="field-range">{fmt(f.min)} – {fmt(f.max)}</span>
                       )}
-                      {f.type === 'string' && <span className="field-range">{f.distinct} values</span>}
+                      {f.type === 'string' && (
+                        <span className="field-range">
+                          {f.distinct}{f.distinctCapped ? '+' : ''} values
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>

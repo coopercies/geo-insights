@@ -1,5 +1,6 @@
 // Field type inference — decides which chart types and stats a column can drive.
 
+const DISTINCT_CAP = 1000;
 const DATE_HINT = /(date|time|year|month|day|_dt|timestamp)/i;
 const ID_HINT =
   /(^|_)(id|fid|objectid|geoid|gid|uid|guid|code|zip|zcta|fips|tract|ct\d*|bg|blockgroup|block|puma|cbsa|censustract)($|_|\d)/i;
@@ -80,7 +81,24 @@ export function inferFields(rows) {
       }
     }
     if (type === 'string') {
-      field.categorical = distinct.size <= 60;
+      // The sample only sees 800 rows, so its distinct count understates wide
+      // columns. Count across every row for an honest cardinality, stopping at
+      // a cap so a free-text column can't build a giant set.
+      const seen = new Set();
+      let capped = false;
+      for (const r of rows) {
+        const v = r[name];
+        if (v === null || v === undefined || v === '') continue;
+        if (seen.size >= DISTINCT_CAP) { capped = true; break; }
+        seen.add(v);
+      }
+      field.distinct = seen.size;
+      field.distinctCapped = capped;
+      // Every text column can be grouped on — charts fold long tails into
+      // "Other" rather than refusing the field. A cardinality cap here just
+      // hid useful columns (an operator name with 900 values is exactly the
+      // thing you want a top-20 bar chart of).
+      field.categorical = true;
     }
     return field;
   }).sort((a, b) => a.name.localeCompare(b.name));

@@ -120,13 +120,19 @@ shpjs. Charts are hand-rolled SVG so every mark can drive a selection.
 
 ### Why MapLibre is pinned
 
-`maplibre-gl` is pinned to an exact **5.24.0** — not a range. On 6.x the map
-initialises without error and reports healthy state (style parsed, valid camera
-transform, workers attached, frames rendering) but never creates a single tile
-for any source, so nothing draws: a black canvas, no errors, no failed requests.
-Version 6 also removed the default export and renamed internals
-(`sourceCaches` → `tileManagers`, `map.transform` → `map._camera.transform`).
+`maplibre-gl` is pinned to an exact **5.24.0** — not a range.
 
-Moving to 6.x means working through its migration guide and re-verifying that
-tiles actually render — not just that the app builds. Don't let a caret range
-pick up the major on its own.
+On 6.2.0 the map initialised without any error and reported healthy state — style
+parsed, camera transform valid, worker attached, animation frames running at
+60fps — but never created a single tile for any source. Nothing drew: a black
+canvas, no console errors, no failed requests. Switching to 5.24.0 fixed it.
+
+One caveat on that diagnosis: the Vite dependency cache was also cleared in the
+same step, so 6.x is not conclusively proven to be the cause. What is certain is
+that 5.24.0 works. Version 6 did definitely remove the default export
+(`import maplibregl from 'maplibre-gl'` no longer works — use named imports).
+
+If you try 6.x again, verify that **tiles actually render**, not merely that the
+app builds and reports no errors — that was exactly the failure mode. And don't
+let a caret range pick up the major on its own; a caret is how it arrived
+unnoticed the first time.
