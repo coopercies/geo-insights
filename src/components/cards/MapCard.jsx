@@ -8,6 +8,17 @@ import { resolveBasemap, basemapKey, isImagery } from '../../lib/basemaps.js';
 
 const SRC = 'data';
 const CLASS_COUNT_DEFAULT = 5;
+const STYLE_TIMEOUT_MS = 12000;
+
+/** WebGL is required. Without it MapLibre throws and the card would sit blank. */
+function webglAvailable() {
+  try {
+    const c = document.createElement('canvas');
+    return !!(c.getContext('webgl2') || c.getContext('webgl'));
+  } catch {
+    return false;
+  }
+}
 
 /** Rebuild source data carrying only the id and the styling value — keeps the
  *  GL source small even when the table has 200 columns. */
@@ -43,6 +54,7 @@ export default function MapCard({ card }) {
   const dragRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [hover, setHover] = useState(null);
+  const [trouble, setTrouble] = useState(null);
 
   const datasets = useStore((s) => s.datasets);
   const selection = useStore((s) => s.selection);
@@ -67,17 +79,45 @@ export default function MapCard({ card }) {
   // --- map lifecycle -------------------------------------------------------
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const map = new MapLibreMap({
-      container: containerRef.current,
-      style: resolveBasemap(basemap, mode),
-      center: [-98, 39],
-      zoom: 3,
-      attributionControl: { compact: true },
-    });
+
+    if (!webglAvailable()) {
+      setTrouble({
+        title: 'WebGL is unavailable',
+        detail:
+          'MapLibre renders with WebGL. It may be disabled in your browser settings, ' +
+          'or blocked by hardware acceleration being turned off.',
+      });
+      return;
+    }
+
+    let map;
+    try {
+      map = new MapLibreMap({
+        container: containerRef.current,
+        style: resolveBasemap(basemap, mode),
+        center: [-98, 39],
+        zoom: 3,
+        attributionControl: { compact: true },
+      });
+    } catch (err) {
+      setTrouble({ title: 'The map could not start', detail: err.message });
+      return;
+    }
+
     appliedStyleRef.current = styleKey;
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
-    map.on('load', () => setReady(true));
-    map.on('error', (e) => console.error('[map]', e && e.error ? e.error.message : e));
+    map.on('load', () => {
+      setReady(true);
+      setTrouble(null);
+    });
+    // Tile hiccups on a working map are noise; a failure before the map ever
+    // loads is the thing worth surfacing, so record it and let the render
+    // decide (it only shows while `ready` is false).
+    map.on('error', (e) => {
+      const msg = e && e.error ? e.error.message : String(e);
+      console.error('[map]', msg);
+      setTrouble({ title: 'The basemap failed to load', detail: msg });
+    });
     mapRef.current = map;
     if (import.meta.env.DEV) window.__map = map;
     return () => {
@@ -86,6 +126,21 @@ export default function MapCard({ card }) {
       appliedStyleRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A map that never reports `load` leaves a blank card with no explanation.
+  useEffect(() => {
+    if (ready || trouble) return;
+    const t = setTimeout(() => {
+      setTrouble({
+        title: 'The basemap is taking too long',
+        detail:
+          'Tiles are fetched from an external host. A content blocker, VPN, or ' +
+          'offline network will stop them. Data layers still work — switch the ' +
+          'basemap to "None" to work without one.',
+      });
+    }, STYLE_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [ready, trouble]);
 
   // Swapping the style wipes every custom layer, so drop `ready` and let the
   // data effect rebuild them once the new style settles.
@@ -321,6 +376,13 @@ export default function MapCard({ card }) {
       )}
       <div className="map-hint">Shift-drag to select · click a feature · click empty space to clear</div>
       {hover && <HoverCard hover={hover} colorField={colorField} />}
+      {!ready && trouble && (
+        <div className="map-trouble">
+          <div className="map-trouble-title">{trouble.title}</div>
+          <p>{trouble.detail}</p>
+        </div>
+      )}
+      {!ready && !trouble && <div className="map-loading">Loading basemap…</div>}
     </div>
   );
 }

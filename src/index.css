@@ -368,6 +368,26 @@ code {
   opacity: 0.92;
 }
 
+.map-trouble {
+  position: absolute; inset: 0; z-index: 7;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 20px 26px; text-align: center;
+  background: var(--surface);
+}
+.map-trouble-title { font-size: 13.5px; font-weight: 600; }
+.map-trouble p {
+  margin: 0; max-width: 340px;
+  font-size: 12px; line-height: 1.55; color: var(--ink-secondary);
+}
+
+.map-loading {
+  position: absolute; inset: 0; z-index: 3;
+  display: grid; place-items: center;
+  background: var(--surface);
+  color: var(--ink-muted);
+  font-size: 12.5px;
+}
+
 .map-hover {
   position: absolute; z-index: 6;
   background: var(--surface);
