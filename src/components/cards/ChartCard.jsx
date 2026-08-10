@@ -29,7 +29,7 @@ export default function ChartCard({ card }) {
       case 'scatter': return <Scatter card={card} dataset={dataset} rows={rows} size={size} ink={ink} mode={mode} />;
       case 'line': return <LineChart card={card} dataset={dataset} rows={rows} size={size} ink={ink} mode={mode} />;
       case 'box': return <BoxPlot card={card} dataset={dataset} rows={rows} size={size} ink={ink} mode={mode} />;
-      case 'donut': return <Donut card={card} dataset={dataset} rows={rows} size={size} ink={ink} mode={mode} />;
+      case 'donut': return <Donut card={card} dataset={dataset} rows={rows} size={size} ink={ink} mode={mode} filtered={filtered} />;
       case 'stacked':
       case 'grouped':
         return <MultiBar card={card} dataset={dataset} rows={rows} size={size} ink={ink} mode={mode} />;
@@ -543,7 +543,7 @@ function BoxPlot({ card, dataset, rows, size, ink, mode }) {
 
 /* -------------------------------------------------------------- donut ---- */
 
-function Donut({ card, dataset, rows, size, ink, mode }) {
+function Donut({ card, dataset, rows, size, ink, mode, filtered }) {
   const select = useStore((s) => s.select);
   const selection = useStore((s) => s.selection);
   const { groupField, measureField, stat } = card.config;
@@ -568,6 +568,10 @@ function Donut({ card, dataset, rows, size, ink, mode }) {
   const outer = Math.max(10, Math.min(plotW, size.height) / 2 - 14);
   const inner = outer * 0.58; // a donut, so the centre can carry the total
   const activeKey = selection && selection.sourceCardId === card.id ? selection.label : null;
+
+  // The "filtered to selection" badge sits top-right; the legend has to start
+  // below it or the first entry is unreadable.
+  const legendTop = filtered ? 34 : 18;
 
   let angle = -Math.PI / 2;
   const arcs = data.map((d, i) => {
@@ -605,28 +609,62 @@ function Donut({ card, dataset, rows, size, ink, mode }) {
           </g>
         );
       })}
+      {/* The centre is the total of what is currently shown, and stays put.
+          Swapping it for whatever the pointer is over made the number
+          ambiguous — with a filter applied you could not tell whether it was
+          the hovered slice, the filtered total, or the grand total. Hover
+          detail belongs beside the slice. */}
       <text x={cx} y={cy - 2} textAnchor="middle" fontSize={18} fontWeight={620} fill={ink.primary}>
-        {formatValue(hover ? hover.value : total)}
+        {formatValue(total)}
       </text>
       <text x={cx} y={cy + 15} textAnchor="middle" fontSize={10} fill={ink.muted}>
-        {hover ? truncate(hover.key, 16) : 'total'}
+        total
       </text>
 
       {/* Legend carries identity, so colour is never the only channel. */}
-      {data.map((d, i) => (
-        <g key={d.key} transform={`translate(${plotW + 6},${18 + i * 18})`} style={{ cursor: 'pointer' }}
-           onClick={() => select(card.id, dataset.id, d.ids, d.key)}
-           onMouseEnter={() => setHover(d)} onMouseLeave={() => setHover(null)}>
-          <rect x={0} y={-8} width={legendW - 10} height={16} fill="transparent" />
-          <rect x={0} y={-5} width={10} height={10} rx={2} fill={seriesColor(i, mode)} />
-          <text x={16} y={4} fontSize={11} fill={ink.secondary}>
-            {truncate(d.key, Math.floor((legendW - 70) / 6.2))}
-          </text>
-          <text x={legendW - 14} y={4} fontSize={10} textAnchor="end" fill={ink.muted}>
-            {((d.value / total) * 100).toFixed(0)}%
-          </text>
-        </g>
-      ))}
+      {data.map((d, i) => {
+        const on = hover === d;
+        return (
+          <g key={d.key} transform={`translate(${plotW + 6},${legendTop + i * 18})`} style={{ cursor: 'pointer' }}
+             onClick={() => select(card.id, dataset.id, d.ids, d.key)}
+             onMouseEnter={() => setHover(d)} onMouseLeave={() => setHover(null)}>
+            <rect x={-4} y={-9} width={legendW - 4} height={18} rx={5}
+                  fill={on ? seriesColor(i, mode) : 'transparent'} opacity={on ? 0.16 : 1} />
+            <rect x={0} y={-5} width={10} height={10} rx={2} fill={seriesColor(i, mode)} />
+            <text x={16} y={4} fontSize={11} fill={on ? ink.primary : ink.secondary}>
+              {truncate(d.key, Math.floor((legendW - 70) / 6.2))}
+            </text>
+            <text x={legendW - 14} y={4} fontSize={10} textAnchor="end"
+                  fill={on ? ink.primary : ink.muted}>
+              {on ? formatValue(d.value) : `${((d.value / total) * 100).toFixed(0)}%`}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* Hover detail sits by the slice rather than replacing the total. */}
+      {hover && (() => {
+        const arc = arcs.find((a) => a.d === hover);
+        if (!arc) return null;
+        const mid = (arc.a0 + arc.a1) / 2;
+        const r = (inner + outer) / 2;
+        const px = cx + Math.cos(mid) * r;
+        const py = cy + Math.sin(mid) * r;
+        const pct = ((hover.value / total) * 100).toFixed(1);
+        const lines = [truncate(hover.key, 24), `${formatValue(hover.value)} · ${pct}%`];
+        // Same width ChartTip computes, so the tip can be flipped to the other
+        // side of the slice rather than spilling across the legend.
+        const w = Math.max(...lines.map((l) => l.length)) * 6.6 + 16;
+        const flip = px + 10 + w > plotW;
+        return (
+          <ChartTip
+            ink={ink}
+            x={Math.max(6, flip ? px - 10 - w : px + 10)}
+            y={Math.min(Math.max(py - 6, 34), size.height - 12)}
+            lines={lines}
+          />
+        );
+      })()}
     </svg>
   );
 }
