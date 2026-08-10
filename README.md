@@ -5,7 +5,7 @@ canvas, all cross-filtered by selection. Built as a replacement for the workflow
 ArcGIS Insights used to cover.
 
 Everything runs client-side. Your data is parsed in the browser and never uploaded
-anywhere, which is also why it deploys to GitHub Pages with no server.
+anywhere, which is also why it deploys as static files with no server.
 
 ## Using it
 
@@ -119,12 +119,25 @@ npm install
 npm run dev
 ```
 
-## Deploying to GitHub Pages
+## Deploying
 
-The workflow in `.github/workflows/deploy.yml` builds and publishes on every push
-to `main`. Enable it once: **Settings → Pages → Source: GitHub Actions**. The
-workflow sets the base path from the repository name automatically, so a project
-site at `https://<user>.github.io/<repo>/` works without configuration.
+The app is static, so any web server will do. `./deploy.sh` builds and ships it
+over ssh:
+
+```bash
+cp .env.deploy.example .env.deploy   # set GEO_HOST and GEO_URL
+./deploy.sh
+```
+
+`.env.deploy` is gitignored, so this repo carries no server address.
+
+The server side is plain nginx: serve the build directory, gzip JSON and JS
+(GeoJSON compresses 5–10×, which matters most for anyone loading a shared
+dashboard), cache `/assets/` immutably since those filenames are content-hashed,
+and fall back to `index.html` so client-side routes resolve.
+
+Deployed from a subdirectory rather than a domain root, set `base` in
+`vite.config.js` to that prefix — asset URLs are absolute.
 
 ## Notes and limits
 

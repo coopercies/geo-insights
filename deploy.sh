@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Build and publish the app to the self-hosted instance.
 #
-# GitHub Pages serves from /geo-insights/ and needs BASE_PATH; the VM serves
-# from the domain root and must NOT have it, so this always builds fresh rather
-# than shipping whatever happens to be in dist/.
+# Always builds fresh rather than shipping whatever happens to be in dist/,
+# so a stale local build can't reach the server.
 #
 # Usage: ./deploy.sh
 
@@ -18,8 +17,7 @@ URL="${GEO_URL:?set GEO_URL=https://your.domain/}"
 KEY="${GEO_KEY:-$HOME/.ssh/id_ed25519}"
 WEBROOT="${GEO_WEBROOT:-/var/www/geo-insights}"
 
-echo "==> building (base: /)"
-unset BASE_PATH
+echo "==> building"
 npm run build
 
 echo "==> uploading to $HOST:$WEBROOT"
