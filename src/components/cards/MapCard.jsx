@@ -383,17 +383,17 @@ export default function MapCard({ card }) {
       ensure({ id: 'lyr-line', type: 'line', source: SRC, paint: {} });
       map.setPaintProperty('lyr-line', 'line-color', stroke.hairline);
       map.setPaintProperty('lyr-line', 'line-width', 0.5);
-      ensure({ id: 'lyr-hi', type: 'line', source: SRC, paint: {}, filter: ['==', ['get', '__i'], -1] });
+      ensure({ id: 'lyr-hi', type: 'line', source: SRC, paint: {} });
       map.setPaintProperty('lyr-hi', 'line-color', stroke.strong);
-      map.setPaintProperty('lyr-hi', 'line-width', 2);
+      map.setPaintProperty('lyr-hi', 'line-width', 0);
     } else if (kind === 'line') {
       ensure({ id: 'lyr-line', type: 'line', source: SRC, paint: {} });
       map.setPaintProperty('lyr-line', 'line-color', fill);
       map.setPaintProperty('lyr-line', 'line-width', 2);
       map.setPaintProperty('lyr-line', 'line-opacity', opacity);
-      ensure({ id: 'lyr-hi', type: 'line', source: SRC, paint: {}, filter: ['==', ['get', '__i'], -1] });
+      ensure({ id: 'lyr-hi', type: 'line', source: SRC, paint: {} });
       map.setPaintProperty('lyr-hi', 'line-color', stroke.strong);
-      map.setPaintProperty('lyr-hi', 'line-width', 4);
+      map.setPaintProperty('lyr-hi', 'line-width', 0);
     } else {
       ensure({ id: 'lyr-circle', type: 'circle', source: SRC, paint: {} });
       map.setPaintProperty('lyr-circle', 'circle-color', fill);
@@ -401,12 +401,12 @@ export default function MapCard({ card }) {
       map.setPaintProperty('lyr-circle', 'circle-radius', radius);
       map.setPaintProperty('lyr-circle', 'circle-stroke-width', 1);
       map.setPaintProperty('lyr-circle', 'circle-stroke-color', stroke.ring);
-      ensure({ id: 'lyr-hi', type: 'circle', source: SRC, paint: {}, filter: ['==', ['get', '__i'], -1] });
-      map.setPaintProperty('lyr-hi', 'circle-radius', [
-        'interpolate', ['linear'], ['zoom'], 3, 4, 10, 8, 16, 13,
-      ]);
+      // A ring layer above the fills; its width is driven by selection state,
+      // so it is invisible until it has something to mark.
+      ensure({ id: 'lyr-hi', type: 'circle', source: SRC, paint: {} });
+      map.setPaintProperty('lyr-hi', 'circle-radius', radius);
       map.setPaintProperty('lyr-hi', 'circle-color', 'rgba(0,0,0,0)');
-      map.setPaintProperty('lyr-hi', 'circle-stroke-width', 2.5);
+      map.setPaintProperty('lyr-hi', 'circle-stroke-width', 0);
       map.setPaintProperty('lyr-hi', 'circle-stroke-color', stroke.strong);
     }
   }, [ready, styleEpoch, dataset, colorMode, colorField, breaks, colors, categories, categoryIndex,
@@ -424,28 +424,72 @@ export default function MapCard({ card }) {
   }, [ready, dataset]);
 
   // --- cross-filter response ----------------------------------------------
+  //
+  // Selection is an *emphasis* treatment, not a decoration. The earlier version
+  // ringed every selected feature in white, which at a few thousand points
+  // merged into a solid white mass that hid the categories underneath — the
+  // selection obscured exactly what it was meant to reveal.
+  //
+  // Now the selected keep their full colour and the unselected fade back to
+  // faint context. Selection state lives in feature-state rather than a filter
+  // expression carrying thousands of ids, which also stops the paint expression
+  // growing with the size of the selection.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready || !dataset) return;
-    const layers = ['lyr-fill', 'lyr-line', 'lyr-circle'].filter((l) => map.getLayer(l));
+    if (!map || !ready || !dataset || !map.getSource(SRC)) return;
+
     const applies = selection && selection.datasetId === dataset.id;
+    const ids = applies ? selection.ids : [];
 
-    if (map.getLayer('lyr-hi')) {
-      map.setFilter('lyr-hi', applies
-        ? ['in', ['get', '__i'], ['literal', selection.ids]]
-        : ['==', ['get', '__i'], -1]);
-    }
+    map.removeFeatureState({ source: SRC });
+    for (const id of ids) map.setFeatureState({ source: SRC, id }, { sel: true });
 
-    // Dim the unselected rather than hiding them — context matters on a map.
+    const isSel = ['boolean', ['feature-state', 'sel'], false];
     const base = card.config.opacity ?? 0.85;
-    const dimmed = applies && selection.sourceCardId !== card.id;
-    for (const l of layers) {
-      const prop = l === 'lyr-fill' ? 'fill-opacity' : l === 'lyr-line' ? 'line-opacity' : 'circle-opacity';
-      map.setPaintProperty(l, prop, dimmed
-        ? ['case', ['in', ['get', '__i'], ['literal', selection.ids]], base, 0.15]
-        : base);
+    const ink = INK[mode];
+    const imagery = isImagery(basemap);
+
+    // A ring helps you find a handful of features. Past that it is noise, and
+    // the rings merge into each other rather than marking anything.
+    const ringed = applies && ids.length > 0 && ids.length <= 150;
+
+    if (map.getLayer('lyr-fill')) {
+      map.setPaintProperty('lyr-fill', 'fill-opacity',
+        applies ? ['case', isSel, base, 0.07] : base);
     }
-  }, [ready, selection, dataset, card.id, card.config.opacity]);
+    if (map.getLayer('lyr-circle')) {
+      map.setPaintProperty('lyr-circle', 'circle-opacity',
+        applies ? ['case', isSel, 1, 0.09] : base);
+      // A hairline in the surface colour separates overlapping selected dots
+      // without the halo swallowing them.
+      map.setPaintProperty('lyr-circle', 'circle-stroke-width',
+        applies ? ['case', isSel, 1.1, 0] : 1);
+      map.setPaintProperty('lyr-circle', 'circle-stroke-color',
+        imagery ? 'rgba(0,0,0,0.55)' : ink.surface);
+    }
+    if (map.getLayer('lyr-line') && dataset.geometryType === 'line') {
+      map.setPaintProperty('lyr-line', 'line-opacity',
+        applies ? ['case', isSel, 1, 0.12] : base);
+    } else if (map.getLayer('lyr-line')) {
+      // Polygon hairlines: mute them for unselected so the fills carry it.
+      map.setPaintProperty('lyr-line', 'line-opacity', applies ? ['case', isSel, 1, 0.15] : 1);
+    }
+
+    // The emphasis outline. Kept thin and tinted rather than a thick white
+    // halo, and only drawn for selections small enough for it to mean something.
+    if (map.getLayer('lyr-hi')) {
+      const accent = imagery ? '#ffffff' : ink.primary;
+      if (dataset.geometryType === 'point') {
+        map.setPaintProperty('lyr-hi', 'circle-stroke-width',
+          ringed ? ['case', isSel, 1.6, 0] : 0);
+        map.setPaintProperty('lyr-hi', 'circle-stroke-color', accent);
+        map.setPaintProperty('lyr-hi', 'circle-opacity', 0);
+      } else {
+        map.setPaintProperty('lyr-hi', 'line-width', applies ? ['case', isSel, 1.6, 0] : 0);
+        map.setPaintProperty('lyr-hi', 'line-color', accent);
+      }
+    }
+  }, [ready, styleEpoch, selection, dataset, card.id, card.config.opacity, mode, basemap]);
 
   // --- interaction ---------------------------------------------------------
   useEffect(() => {
