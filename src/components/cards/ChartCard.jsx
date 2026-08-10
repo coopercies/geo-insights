@@ -9,6 +9,8 @@ import { quantile } from 'd3-array';
 
 const PAD = { top: 12, right: 16, bottom: 34, left: 56 };
 const BAR_RADIUS = 4;
+// Past this a bar stops reading as a bar and starts reading as a block.
+const MAX_BAR = 56;
 const GAP = 2; // surface gap between adjacent fills
 
 export default function ChartCard({ card }) {
@@ -96,7 +98,7 @@ function BarChart({ card, dataset, rows, size, ink, mode }) {
 
     const y = scaleLinear([0, max || 1], [h, 0]).nice();
     const band = w / data.length;
-    const barW = Math.max(2, band - Math.max(GAP, band * 0.25));
+    const barW = Math.min(MAX_BAR, Math.max(2, band - Math.max(GAP, band * 0.25)));
 
     return (
       <svg width={size.width} height={size.height} role="img" className="chart-svg">
@@ -149,7 +151,7 @@ function BarChart({ card, dataset, rows, size, ink, mode }) {
 
   const x = scaleLinear([0, max || 1], [0, w]);
   const band = h / data.length;
-  const barH = Math.max(3, band - Math.max(GAP, band * 0.25));
+  const barH = Math.min(MAX_BAR, Math.max(3, band - Math.max(GAP, band * 0.25)));
 
   return (
     <svg width={size.width} height={size.height} role="img" className="chart-svg">
@@ -179,11 +181,24 @@ function BarChart({ card, dataset, rows, size, ink, mode }) {
                     fill={isActive ? ink.primary : ink.secondary}>
                 {truncate(d.key, Math.floor(pad.left / 6.6))}
               </text>
-              {(hover === d || data.length <= 12) && (
-                <text x={bw + 6} y={by + barH / 2 + 4} fontSize={11} fill={ink.secondary}>
-                  {formatValue(d.value)}
-                </text>
-              )}
+              {(hover === d || data.length <= 12) && (() => {
+                // Near the right edge the label would be clipped, so flip it
+                // inside the bar where there is guaranteed room.
+                const label = formatValue(d.value);
+                const outside = bw + 8 + label.length * 6.4 < w;
+                return (
+                  <text
+                    x={outside ? bw + 6 : bw - 6}
+                    y={by + barH / 2 + 4}
+                    textAnchor={outside ? 'start' : 'end'}
+                    fontSize={11}
+                    fill={outside ? ink.secondary : ink.surface}
+                    fontWeight={outside ? 400 : 550}
+                  >
+                    {label}
+                  </text>
+                );
+              })()}
             </g>
           );
         })}
