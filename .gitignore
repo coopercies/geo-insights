@@ -30,3 +30,6 @@ public/*.csv
 public/*.tsv
 public/*.zip
 !public/vite.svg
+
+# Deploy target — server address stays out of the public repo
+.env.deploy

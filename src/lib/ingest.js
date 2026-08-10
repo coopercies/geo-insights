@@ -3,6 +3,7 @@
 import Papa from 'papaparse';
 import shp from 'shpjs';
 import { inferFields, toNumber } from './fields.js';
+import { contentHash } from './hash.js';
 
 const LAT_NAMES = ['latitude', 'lat', 'y', 'ycoord', 'y_coord', 'lat_dd', 'point_y'];
 const LON_NAMES = ['longitude', 'lon', 'lng', 'long', 'x', 'xcoord', 'x_coord', 'lon_dd', 'point_x'];
@@ -44,18 +45,19 @@ export async function ingestFile(file) {
 
   if (lower.endsWith('.geojson') || lower.endsWith('.json')) {
     const text = await file.text();
-    return fromGeoJSON(parseJSON(text, name), stripExt(name));
+    return fromGeoJSON(parseJSON(text, name), stripExt(name), await contentHash(text));
   }
   if (lower.endsWith('.csv') || lower.endsWith('.tsv')) {
     const text = await file.text();
-    return fromCSV(text, stripExt(name), lower.endsWith('.tsv') ? '\t' : ',');
+    return fromCSV(text, stripExt(name), lower.endsWith('.tsv') ? '\t' : ',', await contentHash(text));
   }
   if (lower.endsWith('.zip')) {
     const buf = await file.arrayBuffer();
+    const hash = await contentHash(buf);
     const parsed = await shp(buf);
     // shpjs returns one FeatureCollection, or an array when the zip holds several.
     const fc = Array.isArray(parsed) ? mergeCollections(parsed) : parsed;
-    return fromGeoJSON(fc, stripExt(name));
+    return fromGeoJSON(fc, stripExt(name), hash);
   }
   if (lower.endsWith('.shp') || lower.endsWith('.dbf') || lower.endsWith('.shx')) {
     throw new Error(
@@ -82,9 +84,10 @@ export async function ingestUrl(url) {
   if (!res.ok) throw new Error(`Could not fetch ${url} — HTTP ${res.status}`);
   const text = await res.text();
   const name = stripExt(decodeURIComponent(url.split('/').pop() || 'remote layer'));
-  if (/\.csv$/i.test(url)) return fromCSV(text, name, ',');
-  if (/\.tsv$/i.test(url)) return fromCSV(text, name, '\t');
-  return fromGeoJSON(parseJSON(text, name), name);
+  const hash = await contentHash(text);
+  if (/\.csv$/i.test(url)) return fromCSV(text, name, ',', hash);
+  if (/\.tsv$/i.test(url)) return fromCSV(text, name, '\t', hash);
+  return fromGeoJSON(parseJSON(text, name), name, hash);
 }
 
 /** Translate the low-level parse failures into something actionable. */
@@ -110,7 +113,7 @@ function mergeCollections(list) {
   };
 }
 
-export function fromGeoJSON(input, name) {
+export function fromGeoJSON(input, name, hash = null) {
   let features;
   if (input.type === 'FeatureCollection') features = input.features || [];
   else if (input.type === 'Feature') features = [input];
@@ -132,10 +135,10 @@ export function fromGeoJSON(input, name) {
   }
 
   const geojson = { type: 'FeatureCollection', features: outFeatures };
-  return finalize({ name, rows, geojson });
+  return finalize({ name, rows, geojson, hash });
 }
 
-export function fromCSV(text, name, delimiter) {
+export function fromCSV(text, name, delimiter, hash = null) {
   const res = Papa.parse(text.trim(), {
     header: true,
     delimiter,
@@ -168,7 +171,7 @@ export function fromCSV(text, name, delimiter) {
     if (features.length) geojson = { type: 'FeatureCollection', features };
   }
 
-  return finalize({ name, rows, geojson, coordFields: latField ? { lat: latField, lon: lonField } : null });
+  return finalize({ name, rows, geojson, hash, coordFields: latField ? { lat: latField, lon: lonField } : null });
 }
 
 function pickCoord(headers, candidates) {
@@ -179,12 +182,13 @@ function pickCoord(headers, candidates) {
   return null;
 }
 
-function finalize({ name, rows, geojson, coordFields = null }) {
+function finalize({ name, rows, geojson, hash = null, coordFields = null }) {
   const fields = inferFields(rows);
   const geometryType = geojson ? dominantGeometry(geojson) : null;
   return {
     id: nextId(),
     name,
+    hash,
     rows,
     geojson,
     geometryType,
