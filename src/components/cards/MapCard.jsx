@@ -251,6 +251,29 @@ export default function MapCard({ card }) {
       });
       map.on('load', () => setTilesOk(true));
 
+      // Browsers cap how many WebGL contexts a page may hold (~16 in Chrome)
+      // and silently kill the oldest when that is exceeded. The card keeps its
+      // header and legend and simply stops drawing — a blank rectangle with no
+      // explanation, which is the one failure mode this app should never ship
+      // again. preventDefault lets the browser restore the context if it can.
+      const canvas = map.getCanvas();
+      canvas.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();
+        setReady(false);
+        setTrouble({
+          title: 'This map was suspended',
+          detail:
+            'Browsers limit how many maps can render at once, and this one was ' +
+            'dropped to make room. Close a map card, or move some onto another ' +
+            'page — only the page you are viewing holds a live map.',
+        });
+      });
+      canvas.addEventListener('webglcontextrestored', () => {
+        setTrouble(null);
+        setStyleEpoch((v) => v + 1);
+        setReady(true);
+      });
+
       // A tile hiccup on a working map is noise; a failure before anything
       // renders is worth surfacing. The render decides — it only shows this
       // while the style is still missing.
@@ -261,13 +284,22 @@ export default function MapCard({ card }) {
       });
 
       mapRef.current = map;
-      if (import.meta.env.DEV) window.__map = map;
+      if (import.meta.env.DEV) {
+        // Dev-only handles so a stress test can drive every map at once.
+        window.__map = map;
+        (window.__maps ||= []).push(map);
+      }
     }, 0);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      if (map) map.remove();
+      if (map) {
+        if (import.meta.env.DEV && window.__maps) {
+          window.__maps = window.__maps.filter((m) => m !== map);
+        }
+        map.remove();
+      }
       mapRef.current = null;
       appliedStyleRef.current = null;
     };
