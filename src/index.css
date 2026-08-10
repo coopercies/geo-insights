@@ -804,3 +804,86 @@ code {
   border: 1px solid var(--border-strong); border-radius: 7px;
   padding: 8px 10px;
 }
+
+/* ── page tabs ──────────────────────────────────────────────────────────── */
+
+.page-tabs {
+  display: flex; align-items: stretch; gap: 2px;
+  padding: 0 12px;
+  flex: 0 0 auto;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  z-index: 15;
+}
+
+.page-tab { position: relative; display: flex; align-items: center; }
+
+.page-tab-label {
+  display: flex; align-items: center; gap: 7px;
+  border: none; background: transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+.page-tab-label:hover { background: var(--sunken); }
+.page-tab.on .page-tab-label {
+  color: var(--ink-primary);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+.page-tab-count {
+  font-size: 10px;
+  color: var(--ink-muted);
+  background: var(--sunken);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-variant-numeric: tabular-nums;
+}
+.page-tab.on .page-tab-count { background: var(--accent-soft); color: var(--accent); }
+
+.page-tab-menu {
+  border: none; background: transparent; color: var(--ink-muted);
+  padding: 2px 6px; margin-right: 2px; font-size: 13px; line-height: 1;
+  border-radius: 5px;
+}
+.page-tab-menu:hover { background: var(--sunken); color: var(--ink-primary); }
+
+.page-menu {
+  position: absolute; top: calc(100% - 2px); left: 8px; z-index: 60;
+  min-width: 168px;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  padding: 5px;
+}
+.page-menu button {
+  border: none; background: transparent;
+  text-align: left; font-size: 12.5px;
+  padding: 7px 10px; border-radius: 6px;
+}
+.page-menu button:hover:not(:disabled) { background: var(--sunken); }
+.page-menu button.danger { color: var(--critical); }
+
+.page-tab-input {
+  align-self: center;
+  font-family: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--ink-primary); background: var(--sunken);
+  border: 1px solid var(--accent); border-radius: 6px;
+  padding: 5px 8px; margin: 4px 2px;
+  width: 150px; outline: none;
+}
+
+.page-add {
+  align-self: center;
+  border: none; background: transparent; color: var(--ink-muted);
+  font-size: 16px; line-height: 1;
+  padding: 4px 10px; margin-left: 4px; border-radius: 6px;
+}
+.page-add:hover { background: var(--sunken); color: var(--ink-primary); }

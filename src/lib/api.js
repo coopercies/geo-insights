@@ -79,7 +79,7 @@ async function ensureDataset(ds, ownerId) {
  * Save a dashboard. Returns the project record. Datasets upload once; a later
  * save of the same dashboard rewrites only the small config record.
  */
-export async function saveProject({ datasets, cards, layout }, { id = null, title = '', visibility = 'private' } = {}) {
+export async function saveProject({ datasets, cards, layout, pages = [] }, { id = null, title = '', visibility = 'private' } = {}) {
   const user = currentUser();
   if (!user) throw new Error('Sign in to save a dashboard.');
 
@@ -91,7 +91,7 @@ export async function saveProject({ datasets, cards, layout }, { id = null, titl
     visibility,
     owner: user.id,
     datasets: datasetIds,
-    config: { cards, layout, datasets: datasets.map(datasetMeta) },
+    config: { cards, layout, pages, datasets: datasets.map(datasetMeta) },
   };
 
   if (id) return pb.collection('projects').update(id, payload);
@@ -134,6 +134,13 @@ export async function loadPublishedProject(shareId) {
     return null; // no backend on this host at all
   }
   if (res.status === 404) return null;
+
+  // A host with no backend may answer /api/* with its SPA fallback — a 200
+  // carrying index.html. Treat anything that isn't JSON as "no backend here"
+  // rather than trying to parse markup.
+  const type = res.headers.get('content-type') || '';
+  if (!type.includes('json')) return null;
+
   if (!res.ok) throw new Error(`Could not load the dashboard — HTTP ${res.status}.`);
 
   const data = await res.json();

@@ -12,11 +12,18 @@ const DRAG_LOCKED = { enabled: false };
 const RESIZE_LOCKED = { enabled: false, handles: [] };
 
 export default function Canvas() {
-  const cards = useStore((s) => s.cards);
-  const layout = useStore((s) => s.layout);
+  const allCards = useStore((s) => s.cards);
+  const allLayout = useStore((s) => s.layout);
+  const activePageId = useStore((s) => s.activePageId);
   const setLayout = useStore((s) => s.setLayout);
   const readOnly = useStore((s) => s.readOnly);
   const [ref, size] = useSize();
+
+  // Only the active page is mounted. Keeping hidden pages in the tree would
+  // mean every map on every page holding a live WebGL context.
+  const cards = allCards.filter((c) => !activePageId || c.pageId === activePageId);
+  const visible = new Set(cards.map((c) => c.id));
+  const layout = allLayout.filter((l) => visible.has(l.i));
 
   return (
     <div className="canvas" ref={ref}>

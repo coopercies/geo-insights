@@ -9,6 +9,7 @@ import { loadSharedProject } from './lib/share.js';
 import { loadPublishedProject, isSignedIn } from './lib/api.js';
 import AccountBar from './components/AccountBar.jsx';
 import ShareDialog from './components/ShareDialog.jsx';
+import PageTabs from './components/PageTabs.jsx';
 
 export default function App() {
   const route = useRef(parseRoute()).current;
@@ -87,6 +88,8 @@ function SharedDashboard({ shareId }) {
         </div>
       </header>
 
+      {state.status === 'ready' && <PageTabs />}
+
       <div className="main">
         {state.status === 'loading'
           ? <div className="empty-state"><div className="empty-card"><h1>Loading dashboard…</h1></div></div>
@@ -107,6 +110,7 @@ function Editor() {
   const datasets = useStore((s) => s.datasets);
   const cards = useStore((s) => s.cards);
   const layout = useStore((s) => s.layout);
+  const pages = useStore((s) => s.pages);
   const selection = useStore((s) => s.selection);
   const mode = useStore((s) => s.mode);
   const status = useStore((s) => s.status);
@@ -193,7 +197,7 @@ function Editor() {
   }, [clearSelection]);
 
   const save = () => {
-    const bytes = downloadProject({ datasets, cards, layout });
+    const bytes = downloadProject({ datasets, cards, layout, pages });
     const warn = sizeWarning(bytes);
     setStatus(warn ? { kind: 'error', text: warn } : { kind: 'ok', text: 'Project saved.' });
   };
@@ -237,6 +241,8 @@ function Editor() {
           </button>
         </div>
       </header>
+
+      {cards.length > 0 && <PageTabs />}
 
       <div className="main">
         <Sidebar onFiles={handleFiles} />

@@ -10,6 +10,7 @@ export default function ShareDialog({ project, onClose, onSaved }) {
   const datasets = useStore((s) => s.datasets);
   const cards = useStore((s) => s.cards);
   const layout = useStore((s) => s.layout);
+  const pages = useStore((s) => s.pages);
   const setStatus = useStore((s) => s.setStatus);
 
   const [record, setRecord] = useState(project);
@@ -39,7 +40,7 @@ export default function ShareDialog({ project, onClose, onSaved }) {
 
   const save = () =>
     run('save', async () => {
-      const next = await saveProject({ datasets, cards, layout }, {
+      const next = await saveProject({ datasets, cards, layout, pages }, {
         id: record?.id ?? null,
         title: title.trim(),
         visibility: record?.visibility ?? 'private',
@@ -50,7 +51,7 @@ export default function ShareDialog({ project, onClose, onSaved }) {
 
   const publish = () =>
     run('publish', async () => {
-      const saved = await saveProject({ datasets, cards, layout }, {
+      const saved = await saveProject({ datasets, cards, layout, pages }, {
         id: record?.id ?? null,
         title: title.trim(),
         visibility: 'unlisted',

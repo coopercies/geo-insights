@@ -79,6 +79,7 @@ writeFileSync(
     title,
     cards: project.cards,
     layout: project.layout,
+    pages: project.pages || [],
     datasets: metas,
   }, null, 2)
 );

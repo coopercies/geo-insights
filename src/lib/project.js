@@ -5,13 +5,14 @@
 const FORMAT = 'geo-insights/v1';
 const WARN_BYTES = 60 * 1024 * 1024;
 
-export function serialize({ datasets, cards, layout }) {
+export function serialize({ datasets, cards, layout, pages = [] }) {
   return JSON.stringify({
     format: FORMAT,
     savedAt: new Date().toISOString(),
     datasets,
     cards,
     layout,
+    pages,
   });
 }
 
@@ -45,13 +46,14 @@ export function datasetPayload(ds) {
  * Local .geoinsights.json files keep using serialize() — a single portable file
  * with nothing to resolve is the right shape for something you email.
  */
-export function splitProject({ datasets, cards, layout }) {
+export function splitProject({ datasets, cards, layout, pages = [] }) {
   return {
     config: {
       format: FORMAT,
       savedAt: new Date().toISOString(),
       cards,
       layout,
+      pages,
       datasets: datasets.map(datasetMeta),
     },
     payloads: datasets
@@ -68,7 +70,7 @@ export function joinProject(config, payloadByHash) {
     const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
     return { ...meta, rows: parsed.rows, geojson: parsed.geojson };
   });
-  return { datasets, cards: config.cards || [], layout: config.layout || [] };
+  return { datasets, cards: config.cards || [], layout: config.layout || [], pages: config.pages || [] };
 }
 
 export function downloadProject(state, filename = 'dashboard.geoinsights.json') {

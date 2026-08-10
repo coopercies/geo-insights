@@ -10,6 +10,9 @@ const nextCardId = () => `card${++cardSeq}`;
  * dataset reads it and filters itself. This mirrors how Insights behaved —
  * selecting on any card drives all the others.
  */
+let pageSeq = 0;
+const nextPageId = () => `page${++pageSeq}`;
+
 const initialState = {
   // A published dashboard is rendered by the same components as the editor;
   // this flag is what removes the editing affordances rather than a separate
@@ -18,6 +21,10 @@ const initialState = {
   datasets: [],
   cards: [],
   layout: [],
+  // Pages are how a dashboard separates subjects — "overview" from "health
+  // disparities" — without cramming one canvas. Cards belong to exactly one.
+  pages: [],
+  activePageId: null,
   selection: null, // { sourceCardId, datasetId, ids: number[], label }
   mode: currentMode(),
   activeDatasetId: null,
@@ -26,6 +33,83 @@ const initialState = {
 
 export const useStore = create((set, get) => ({
   ...initialState,
+
+  /** Every card needs a page; create the implicit first one on demand. */
+  ensurePage() {
+    const state = get();
+    if (state.pages.length) return state.activePageId ?? state.pages[0].id;
+    const id = nextPageId();
+    set({ pages: [{ id, name: 'Page 1' }], activePageId: id });
+    return id;
+  },
+
+  addPage(name) {
+    const id = nextPageId();
+    set((s) => ({
+      pages: [...s.pages, { id, name: name || `Page ${s.pages.length + 1}` }],
+      activePageId: id,
+    }));
+    return id;
+  },
+
+  renamePage(id, name) {
+    set((s) => ({ pages: s.pages.map((p) => (p.id === id ? { ...p, name } : p)) }));
+  },
+
+  removePage(id) {
+    const { pages } = get();
+    if (pages.length <= 1) return; // a dashboard always has at least one page
+    set((s) => {
+      const doomed = s.cards.filter((c) => c.pageId === id).map((c) => c.id);
+      const remaining = s.pages.filter((p) => p.id !== id);
+      return {
+        pages: remaining,
+        cards: s.cards.filter((c) => c.pageId !== id),
+        layout: s.layout.filter((l) => !doomed.includes(l.i)),
+        activePageId: s.activePageId === id ? remaining[0].id : s.activePageId,
+        selection: s.selection && doomed.includes(s.selection.sourceCardId) ? null : s.selection,
+      };
+    });
+  },
+
+  duplicatePage(id) {
+    const state = get();
+    const source = state.pages.find((p) => p.id === id);
+    if (!source) return;
+    const newPageId = nextPageId();
+    const idMap = new Map();
+    const cards = state.cards
+      .filter((c) => c.pageId === id)
+      .map((c) => {
+        const copy = { ...c, id: nextCardId(), pageId: newPageId, config: { ...c.config } };
+        idMap.set(c.id, copy.id);
+        return copy;
+      });
+    const layout = state.layout
+      .filter((l) => idMap.has(l.i))
+      .map((l) => ({ ...l, i: idMap.get(l.i) }));
+    set((s) => ({
+      pages: [...s.pages, { id: newPageId, name: `${source.name} copy` }],
+      cards: [...s.cards, ...cards],
+      layout: [...s.layout, ...layout],
+      activePageId: newPageId,
+    }));
+  },
+
+  setActivePage(id) {
+    set({ activePageId: id });
+  },
+
+  movePage(id, delta) {
+    set((s) => {
+      const i = s.pages.findIndex((p) => p.id === id);
+      const j = i + delta;
+      if (i < 0 || j < 0 || j >= s.pages.length) return {};
+      const pages = [...s.pages];
+      [pages[i], pages[j]] = [pages[j], pages[i]];
+      return { pages };
+    });
+  },
 
   setReadOnly(readOnly) {
     set({ readOnly });
@@ -74,19 +158,27 @@ export const useStore = create((set, get) => ({
   },
 
   addCard(type, datasetId, config = {}) {
+    const pageId = get().ensurePage();
     const state = get();
     const ds = state.datasets.find((d) => d.id === (datasetId || state.activeDatasetId));
     const id = nextCardId();
     const card = {
       id,
+      pageId,
       type,
       datasetId: ['text', 'title'].includes(type) ? null : (ds ? ds.id : null),
       config: { ...defaultConfig(type, ds), ...config },
     };
-    set((s) => ({
-      cards: [...s.cards, card],
-      layout: [...s.layout, { i: id, ...defaultBox(type), ...nextFreeSlot(s.layout, defaultBox(type))}],
-    }));
+    set((s) => {
+      // Placement must only see the page being edited; measuring against every
+      // page's layout pushes cards into empty space that isn't theirs.
+      const onPage = new Set(s.cards.filter((c) => c.pageId === pageId).map((c) => c.id));
+      const pageLayout = s.layout.filter((l) => onPage.has(l.i));
+      return {
+        cards: [...s.cards, card],
+        layout: [...s.layout, { i: id, ...defaultBox(type), ...nextFreeSlot(pageLayout, defaultBox(type)) }],
+      };
+    });
     return id;
   },
 
@@ -112,8 +204,16 @@ export const useStore = create((set, get) => ({
     get().addCard(card.type, card.datasetId, { ...card.config });
   },
 
-  setLayout(layout) {
-    set({ layout });
+  /**
+   * The grid only ever reports the page on screen, so merge its entries into
+   * the full layout instead of replacing it — otherwise switching pages would
+   * wipe the layout of every page you're not looking at.
+   */
+  setLayout(pageLayout) {
+    set((s) => {
+      const seen = new Set(pageLayout.map((l) => l.i));
+      return { layout: [...s.layout.filter((l) => !seen.has(l.i)), ...pageLayout] };
+    });
   },
 
   /** ids === null clears; an empty array is a real (empty) selection. */
@@ -128,14 +228,35 @@ export const useStore = create((set, get) => ({
 
   loadProject(project) {
     cardSeq = 0;
+    pageSeq = 0;
     for (const c of project.cards || []) {
       const n = Number(String(c.id).replace('card', ''));
       if (Number.isFinite(n) && n > cardSeq) cardSeq = n;
     }
+    for (const p of project.pages || []) {
+      const n = Number(String(p.id).replace('page', ''));
+      if (Number.isFinite(n) && n > pageSeq) pageSeq = n;
+    }
+
+    // Dashboards saved before pages existed have neither pages nor pageIds;
+    // fold them onto a single page rather than refusing to open.
+    let pages = project.pages || [];
+    let cards = project.cards || [];
+    if (!pages.length) {
+      const id = `page${++pageSeq}`;
+      pages = [{ id, name: 'Page 1' }];
+      cards = cards.map((c) => ({ ...c, pageId: c.pageId ?? id }));
+    } else {
+      const fallback = pages[0].id;
+      cards = cards.map((c) => ({ ...c, pageId: c.pageId ?? fallback }));
+    }
+
     set({
       datasets: project.datasets || [],
-      cards: project.cards || [],
+      cards,
       layout: project.layout || [],
+      pages,
+      activePageId: pages[0].id,
       selection: null,
       activeDatasetId: (project.datasets || [])[0]?.id ?? null,
     });
@@ -167,7 +288,19 @@ export function useFilteredRows(card) {
 
 function defaultConfig(type, ds) {
   const numeric = ds ? ds.fields.filter((f) => f.type === 'number' && !f.isKey) : [];
-  const cats = ds ? ds.fields.filter((f) => f.type === 'string' && f.categorical) : [];
+  // Every text column is groupable, but one value per row makes a meaningless
+  // chart — an h3 index or a name field yields 20 bars of 1 and a huge "Other".
+  // Fewest distinct values first, and nothing near-unique as a default.
+  const rows = ds ? ds.rows.length : 0;
+  const cats = ds
+    ? ds.fields
+        .filter((f) => f.type === 'string' && !f.isKey)
+        // distinctCapped means the count stopped at the cap, so the column has
+        // at least a thousand values — never a sensible default grouping.
+        .filter((f) => !f.distinctCapped)
+        .filter((f) => !rows || (f.distinct ?? 0) <= Math.max(24, rows * 0.5))
+        .sort((a, b) => (a.distinct ?? 0) - (b.distinct ?? 0))
+    : [];
   switch (type) {
     case 'map':
       return {
