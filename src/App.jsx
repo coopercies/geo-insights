@@ -6,6 +6,9 @@ import { ingestFile, ingestUrl, sizeVerdict } from './lib/ingest.js';
 import { downloadProject, readProject, sizeWarning, isProjectFile } from './lib/project.js';
 import { parseRoute } from './lib/router.js';
 import { loadSharedProject } from './lib/share.js';
+import { loadPublishedProject, isSignedIn } from './lib/api.js';
+import AccountBar from './components/AccountBar.jsx';
+import ShareDialog from './components/ShareDialog.jsx';
 
 export default function App() {
   const route = useRef(parseRoute()).current;
@@ -28,7 +31,11 @@ function SharedDashboard({ shareId }) {
     if (loadedRef.current) return;
     loadedRef.current = true;
     setReadOnly(true);
-    loadSharedProject(shareId)
+    // Backend first, then statically published files — dashboards published
+    // before the backend existed keep working.
+    loadPublishedProject(shareId)
+      .catch(() => null)
+      .then((fromApi) => fromApi || loadSharedProject(shareId))
       .then((project) => {
         loadProject(project);
         setState({ status: 'ready', error: null, title: project.title });
@@ -93,6 +100,9 @@ function SharedDashboard({ shareId }) {
 function Editor() {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [project, setProject] = useState(null);
+  const [signedIn, setSignedIn] = useState(isSignedIn());
   const urlLoadedRef = useRef(false);
 
   const datasets = useStore((s) => s.datasets);
@@ -209,7 +219,15 @@ function Editor() {
         </div>
 
         <div className="topbar-actions">
-          <button onClick={save} disabled={!datasets.length}>Save</button>
+          <AccountBar onSignedIn={() => setSignedIn(true)} />
+          {signedIn && (
+            <button className="btn-primary" onClick={() => setShareOpen(true)} disabled={!datasets.length}>
+              Save &amp; share
+            </button>
+          )}
+          <button onClick={save} disabled={!datasets.length} title="Download a .geoinsights.json file">
+            Export
+          </button>
           <button onClick={() => {
             if (cards.length && !confirm('Clear the current dashboard?')) return;
             reset();
@@ -233,6 +251,14 @@ function Editor() {
             <div className="drop-sub">GeoJSON · CSV · zipped shapefile · saved project</div>
           </div>
         </div>
+      )}
+
+      {shareOpen && (
+        <ShareDialog
+          project={project}
+          onClose={() => setShareOpen(false)}
+          onSaved={(rec) => rec && setProject(rec)}
+        />
       )}
 
       {busy && <div className="busy-bar" />}
