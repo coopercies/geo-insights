@@ -5,6 +5,7 @@ import { BASEMAP_OPTIONS } from '../lib/basemaps.js';
 import { RAMP_OPTIONS, CATEGORICAL } from '../lib/palette.js';
 import { CLASS_METHODS } from '../lib/classify.js';
 import ErrorBoundary from './ErrorBoundary.jsx';
+import Segmented from './Segmented.jsx';
 import MapCard from './cards/MapCard.jsx';
 import ChartCard from './cards/ChartCard.jsx';
 import StatCard from './cards/StatCard.jsx';
@@ -118,20 +119,24 @@ function Settings({ card, dataset }) {
               {BASEMAP_OPTIONS.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
             </select>
           </label>
-          <label>
+          <label className="seg-wide">
             <span>Symbology</span>
-            <select value={colorMode} onChange={(e) => {
-              const next = e.target.value;
-              // Each mode wants a different kind of field, so re-seed sensibly.
-              const field = next === 'graduated' ? (measures[0]?.name ?? null)
-                : next === 'categorical' ? (cats[0]?.name ?? null)
-                : null;
-              set({ colorMode: next, colorField: field });
-            }}>
-              <option value="single">Single color</option>
-              <option value="graduated">Graduated (numeric)</option>
-              <option value="categorical">Categories (text)</option>
-            </select>
+            <Segmented
+              name="Symbology"
+              value={colorMode}
+              onChange={(next) => {
+                // Each mode wants a different kind of field, so re-seed sensibly.
+                const field = next === 'graduated' ? (measures[0]?.name ?? null)
+                  : next === 'categorical' ? (cats[0]?.name ?? null)
+                  : null;
+                set({ colorMode: next, colorField: field });
+              }}
+              options={[
+                { value: 'single', label: 'Single', hint: 'One colour for every feature' },
+                { value: 'graduated', label: 'Graduated', hint: 'Classed by a numeric field' },
+                { value: 'categorical', label: 'Categories', hint: 'Coloured by a text field' },
+              ]}
+            />
           </label>
 
           {colorMode !== 'single' && (
@@ -236,13 +241,17 @@ function Settings({ card, dataset }) {
           )}
 
           {card.config.chartType === 'bar' && (
-            <label>
+            <label className="seg">
               <span>Bars</span>
-              <select value={card.config.orientation ?? 'horizontal'}
-                      onChange={(e) => set({ orientation: e.target.value })}>
-                <option value="horizontal">Horizontal</option>
-                <option value="vertical">Vertical</option>
-              </select>
+              <Segmented
+                name="Bar orientation"
+                value={card.config.orientation ?? 'horizontal'}
+                onChange={(v) => set({ orientation: v })}
+                options={[
+                  { value: 'horizontal', label: 'Horizontal' },
+                  { value: 'vertical', label: 'Vertical' },
+                ]}
+              />
             </label>
           )}
 
@@ -334,17 +343,23 @@ function Settings({ card, dataset }) {
             <input type="text" value={card.config.subtitle ?? ''} placeholder="(optional)"
                    onChange={(e) => set({ subtitle: e.target.value })} />
           </label>
-          <label>
+          <label className="seg">
             <span>Size</span>
-            <select value={card.config.size ?? 'lg'} onChange={(e) => set({ size: e.target.value })}>
-              {TITLE_SIZES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
+            <Segmented
+              name="Title size"
+              value={card.config.size ?? 'lg'}
+              onChange={(v) => set({ size: v })}
+              options={TITLE_SIZES.map((t) => ({ value: t.id, label: t.label, hint: t.label }))}
+            />
           </label>
-          <label>
+          <label className="seg">
             <span>Align</span>
-            <select value={card.config.align ?? 'left'} onChange={(e) => set({ align: e.target.value })}>
-              {TITLE_ALIGN.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
+            <Segmented
+              name="Alignment"
+              value={card.config.align ?? 'left'}
+              onChange={(v) => set({ align: v })}
+              options={TITLE_ALIGN.map((a) => ({ value: a, label: a[0].toUpperCase() + a.slice(1) }))}
+            />
           </label>
         </>
       )}
