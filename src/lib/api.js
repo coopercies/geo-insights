@@ -102,6 +102,25 @@ export function listProjects() {
   return pb.collection('projects').getFullList({ sort: '-updated' });
 }
 
+/**
+ * Open a saved dashboard you own. Returns the reconstructed project plus the
+ * record, so a later save updates this dashboard rather than creating a copy.
+ */
+export async function openProject(id) {
+  const record = await pb.collection('projects').getOne(id, { expand: 'datasets' });
+  const expanded = record.expand?.datasets ?? [];
+
+  const payloads = await Promise.all(
+    expanded.map(async (d) => {
+      const res = await fetch(pb.files.getURL(d, d.payload), { cache: 'force-cache' });
+      if (!res.ok) throw new Error(`Missing data for layer "${d.name}".`);
+      return [d.hash, await res.text()];
+    })
+  );
+
+  return { project: joinProject(record.config, Object.fromEntries(payloads)), record };
+}
+
 export function deleteProject(id) {
   return pb.collection('projects').delete(id);
 }

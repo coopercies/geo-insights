@@ -10,6 +10,7 @@ import { loadPublishedProject, isSignedIn } from './lib/api.js';
 import AccountBar from './components/AccountBar.jsx';
 import ShareDialog from './components/ShareDialog.jsx';
 import PageTabs from './components/PageTabs.jsx';
+import OpenDialog from './components/OpenDialog.jsx';
 
 export default function App() {
   const route = useRef(parseRoute()).current;
@@ -103,6 +104,7 @@ function Editor() {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [openOpen, setOpenOpen] = useState(false);
   const [project, setProject] = useState(null);
   const [signedIn, setSignedIn] = useState(isSignedIn());
   const urlLoadedRef = useRef(false);
@@ -228,6 +230,9 @@ function Editor() {
               Save &amp; share
             </button>
           )}
+          <button onClick={() => setOpenOpen(true)} title="Open a saved dashboard or a project file">
+            Open
+          </button>
           <button onClick={save} disabled={!datasets.length} title="Download a .geoinsights.json file">
             Export
           </button>
@@ -256,6 +261,14 @@ function Editor() {
             <div className="drop-sub">GeoJSON · CSV · zipped shapefile · saved project</div>
           </div>
         </div>
+      )}
+
+      {openOpen && (
+        <OpenDialog
+          onClose={() => setOpenOpen(false)}
+          onOpened={(rec) => setProject(rec)}
+          onFiles={handleFiles}
+        />
       )}
 
       {shareOpen && (
@@ -290,7 +303,8 @@ function EmptyState() {
         <ul>
           <li><strong>Shift-drag on the map</strong> to select features — every chart and statistic follows.</li>
           <li><strong>Click a bar or brush a scatter</strong> to push a selection back to the map.</li>
-          <li><strong>Esc</strong> clears the selection. <strong>Save</strong> writes a self-contained project file.</li>
+          <li><strong>Esc</strong> clears the selection. <strong>Export</strong> writes a self-contained project file.</li>
+          <li><strong>Open</strong> reopens a saved dashboard, or a project file from this computer.</li>
         </ul>
       </div>
     </div>
