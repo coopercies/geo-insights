@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../store.js';
-import { detectCrs, tryCandidate, reprojectCollection, haversine } from '../lib/reproject.js';
+import { detectCrs, tryCandidate, reprojectCollection, haversine, targetFromAttributes } from '../lib/reproject.js';
 
 const fmt = (n) => (n >= 100 ? Math.round(n).toLocaleString() : n.toFixed(1));
 const coord = ([lon, lat]) => `${lat.toFixed(4)}°, ${lon.toFixed(4)}°`;
@@ -22,12 +22,29 @@ export default function ReprojectDialog({ dataset, onClose }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // A layer already in lat/lon is the reference: the correct CRS lands this
-  // data beside it, a wrong one puts it in another state or another ocean.
-  const reference = datasets.find((d) => d.id !== dataset.id && d.bbox && !d.projected);
-  const target = reference
-    ? [(reference.bbox[0] + reference.bbox[2]) / 2, (reference.bbox[1] + reference.bbox[3]) / 2]
-    : null;
+  const [manualTarget, setManualTarget] = useState('');
+
+  // Reference point, best source first: another layer already in lat/lon, then
+  // this layer's own degree-valued attribute columns, then somewhere you type.
+  const otherLayer = datasets.find((d) => d.id !== dataset.id && d.bbox && !d.projected);
+  const fromAttrs = targetFromAttributes(dataset);
+  const typed = (() => {
+    const m = manualTarget.match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+    if (!m) return null;
+    const lat = Number(m[1]), lon = Number(m[2]);
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    return { at: [lon, lat], from: 'the location you entered' };
+  })();
+
+  const ref = typed
+    ? typed
+    : otherLayer
+      ? {
+          at: [(otherLayer.bbox[0] + otherLayer.bbox[2]) / 2, (otherLayer.bbox[1] + otherLayer.bbox[3]) / 2],
+          from: `“${otherLayer.name}”`,
+        }
+      : fromAttrs;
+  const target = ref ? ref.at : null;
 
   useEffect(() => {
     let live = true;
@@ -35,7 +52,7 @@ export default function ReprojectDialog({ dataset, onClose }) {
       .then((list) => { if (live) { setResults(list); setChosen(list[0] ?? null); } })
       .catch((err) => { if (live) { setError(err.message); setResults([]); } });
     return () => { live = false; };
-  }, [dataset.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dataset.id, target && target.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const test = async () => {
     const code = Number(manual.replace(/[^0-9]/g, ''));
@@ -81,10 +98,24 @@ export default function ReprojectDialog({ dataset, onClose }) {
         <p className="modal-note">
           Its coordinates are {dataset.projected?.units ?? 'projected'}, so the source system
           has to be identified before they can be converted to latitude/longitude.
-          {reference
-            ? ` Candidates are ranked by how close they land to “${reference.name}”, which is already in lat/lon.`
-            : ' No other layer is loaded in lat/lon, so there is nothing to check the result against — verify on the map after applying.'}
+          {ref
+            ? ` Candidates are ranked by how close they land to ${ref.from}.`
+            : ' Nothing is loaded to check the result against, so enter roughly where this data should be and the candidates will be ranked by distance.'}
         </p>
+
+        {!ref && (
+          <div className="crs-manual">
+            <div className="share-label">Roughly where is this data?</div>
+            <div className="share-link">
+              <input
+                type="text"
+                value={manualTarget}
+                placeholder="latitude, longitude — e.g. 34.05, -118.24"
+                onChange={(e) => setManualTarget(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
 
         {results === null && <p className="modal-note">Testing candidate systems…</p>}
 
@@ -106,7 +137,7 @@ export default function ReprojectDialog({ dataset, onClose }) {
                       lands at {coord(r.at)}
                       {r.km !== null && (
                         <span className={good ? 'crs-good' : 'crs-far'}>
-                          {' · '}{fmt(r.km)} km from {reference.name.slice(0, 22)}
+                          {' · '}{fmt(r.km)} km away
                         </span>
                       )}
                     </span>

@@ -10,7 +10,7 @@ import ReprojectDialog from '../ReprojectDialog.jsx';
 
 const SRC = 'data';
 const CLASS_COUNT_DEFAULT = 5;
-const STYLE_TIMEOUT_MS = 12000;
+const STYLE_TIMEOUT_MS = 20000;
 
 /**
  * Ask the network what actually happened, rather than guessing in the message.
@@ -312,6 +312,28 @@ export default function MapCard({ card }) {
   useEffect(() => {
     if (ready || trouble || basemap === 'none') return;
     const t = setTimeout(async () => {
+      const map = mapRef.current;
+
+      // Ask the map before accusing it. A timer alone reports a slow load as a
+      // failure, and this warning claimed WebGL was blocked on maps that were
+      // merely still parsing — the accusation was the bug, not the map.
+      if (map) {
+        const style = map.getStyle();
+        if (style && style.layers && style.layers.length) {
+          setReady(true);
+          return;
+        }
+      }
+
+      if (!map) {
+        setTrouble({
+          title: 'The map could not start',
+          detail: 'The map never initialised on this card. Reloading usually clears it.',
+          offerNoBasemap: true,
+        });
+        return;
+      }
+
       setTrouble({
         title: 'The basemap did not load',
         detail: await diagnoseBasemap(basemap, mode),

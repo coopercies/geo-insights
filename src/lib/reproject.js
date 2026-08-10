@@ -95,6 +95,33 @@ export function haversine([lon1, lat1], [lon2, lat2]) {
 
 const centre = (bbox) => [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
 
+const LON_NAMES = /^(x|lon|lng|long|longitude|point_x|x_coord|xcoord)$/i;
+const LAT_NAMES = /^(y|lat|latitude|point_y|y_coord|ycoord)$/i;
+
+/**
+ * A reference point taken from the layer's own attributes. Exports frequently
+ * carry X/Y or lat/lon columns in degrees even when the geometry is projected —
+ * the file then contains the answer to its own question, and it beats asking
+ * the user where their data is.
+ */
+export function targetFromAttributes(dataset) {
+  if (!dataset || !dataset.fields || !dataset.rows) return null;
+  const lon = dataset.fields.find((f) => f.type === 'number' && LON_NAMES.test(f.name));
+  const lat = dataset.fields.find((f) => f.type === 'number' && LAT_NAMES.test(f.name));
+  if (!lon || !lat) return null;
+
+  // Only if those columns are plausibly degrees — an X column in feet is the
+  // very thing we are trying to convert.
+  if (Math.abs(lon.min) > 180 || Math.abs(lon.max) > 180) return null;
+  if (Math.abs(lat.min) > 90 || Math.abs(lat.max) > 90) return null;
+  if (lon.min === 0 && lon.max === 0) return null;
+
+  return {
+    at: [(lon.min + lon.max) / 2, (lat.min + lat.max) / 2],
+    from: `${lon.name}/${lat.name} columns`,
+  };
+}
+
 /** Where a candidate would put this layer's centre, or null if it can't. */
 export async function tryCandidate(code, bbox) {
   const def = await fetchDefinition(code);
