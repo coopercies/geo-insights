@@ -34,7 +34,6 @@ function SharedDashboard({ shareId }) {
     // Backend first, then statically published files — dashboards published
     // before the backend existed keep working.
     loadPublishedProject(shareId)
-      .catch(() => null)
       .then((fromApi) => fromApi || loadSharedProject(shareId))
       .then((project) => {
         loadProject(project);

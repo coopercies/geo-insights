@@ -34,9 +34,11 @@ routerAdd('GET', '/api/share/{shareId}', (e) => {
       datasets.push({
         hash: d.getString('hash'),
         name: d.getString('name'),
+        // Addressed by collection name, not d.collectionId — that property is
+        // undefined inside the hook VM and silently produced /api/files/undefined/.
         // Payloads are content-addressed and immutable, so a plain file URL is
         // safe to hand out and cache hard.
-        url: `/api/files/${d.collectionId}/${d.id}/${d.getString('payload')}`,
+        url: `/api/files/datasets/${d.id}/${d.getString('payload')}`,
       });
     }
   } catch (err) {

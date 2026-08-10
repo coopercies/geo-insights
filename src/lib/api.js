@@ -124,8 +124,16 @@ export function setVisibility(id, visibility) {
  * endpoint takes one id and returns that dashboard or nothing.
  */
 export async function loadPublishedProject(shareId) {
-  const res = await fetch(`/api/share/${encodeURIComponent(shareId)}`, { cache: 'no-cache' });
-  if (res.status === 404) return null; // caller falls back to static /shared
+  // Returning null means "not here, try the static files". Anything after this
+  // point is a real failure and must surface: swallowing it once turned a
+  // broken payload URL into a misleading "never published" message.
+  let res;
+  try {
+    res = await fetch(`/api/share/${encodeURIComponent(shareId)}`, { cache: 'no-cache' });
+  } catch {
+    return null; // no backend on this host at all
+  }
+  if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Could not load the dashboard — HTTP ${res.status}.`);
 
   const data = await res.json();
