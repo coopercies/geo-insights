@@ -116,32 +116,31 @@ export function setVisibility(id, visibility) {
 }
 
 /**
- * Fetch a published dashboard by share id. No auth: the rule allows viewing
- * unlisted projects, and datasets are fetched by id from the project's own
- * config, so there is no way to enumerate anyone's layers.
+ * Fetch a published dashboard by share id.
+ *
+ * Deliberately not a collection query: finding a project by shareId is a list
+ * operation, and granting anonymous list access would let anyone page through
+ * every unlisted dashboard and collect its share ids. The /api/share/{id}
+ * endpoint takes one id and returns that dashboard or nothing.
  */
 export async function loadPublishedProject(shareId) {
-  let record;
-  try {
-    record = await pb.collection('projects').getFirstListItem(`shareId="${shareId}"`, { expand: 'datasets' });
-  } catch (err) {
-    if (err.status === 404) return null; // caller falls back to static /shared
-    throw err;
-  }
+  const res = await fetch(`/api/share/${encodeURIComponent(shareId)}`, { cache: 'no-cache' });
+  if (res.status === 404) return null; // caller falls back to static /shared
+  if (!res.ok) throw new Error(`Could not load the dashboard — HTTP ${res.status}.`);
 
-  const expanded = record.expand?.datasets ?? [];
+  const data = await res.json();
   const payloads = await Promise.all(
-    expanded.map(async (d) => {
-      const url = pb.files.getURL(d, d.payload);
-      const res = await fetch(url, { cache: 'force-cache' });
-      if (!res.ok) throw new Error(`Missing data for layer "${d.name}".`);
-      return [d.hash, await res.text()];
+    (data.datasets || []).map(async (d) => {
+      // Immutable and content-addressed, so these cache hard.
+      const r = await fetch(d.url, { cache: 'force-cache' });
+      if (!r.ok) throw new Error(`Missing data for layer "${d.name}".`);
+      return [d.hash, await r.text()];
     })
   );
 
   return {
-    ...joinProject(record.config, Object.fromEntries(payloads)),
-    title: record.title || null,
-    publishedAt: record.updated,
+    ...joinProject(data.config, Object.fromEntries(payloads)),
+    title: data.title || null,
+    publishedAt: data.publishedAt || null,
   };
 }
