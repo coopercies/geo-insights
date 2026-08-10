@@ -36,6 +36,11 @@
   --sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.42) 0%,
                                    rgba(255, 255, 255, 0.10) 32%,
                                    transparent 58%);
+  /* Control Center module tiles: a chip floating on the blurred sheet. */
+  --chip: rgba(255, 255, 255, 0.44);
+  --chip-hover: rgba(255, 255, 255, 0.68);
+  --chip-rim: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  --sheet: rgba(252, 252, 251, 0.20);
   --glass-shadow: 0 1px 2px rgba(11, 11, 11, 0.05),
                   0 8px 28px rgba(11, 11, 11, 0.09),
                   0 24px 64px rgba(11, 11, 11, 0.06);
@@ -73,6 +78,10 @@
     --sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0%,
                                      rgba(255, 255, 255, 0.04) 34%,
                                      transparent 60%);
+    --chip: rgba(255, 255, 255, 0.10);
+    --chip-hover: rgba(255, 255, 255, 0.17);
+    --chip-rim: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    --sheet: rgba(20, 20, 19, 0.24);
     --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.5),
                     0 8px 28px rgba(0, 0, 0, 0.45),
                     0 24px 64px rgba(0, 0, 0, 0.35);
@@ -110,6 +119,10 @@
   --sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0%,
                                    rgba(255, 255, 255, 0.04) 34%,
                                    transparent 60%);
+  --chip: rgba(255, 255, 255, 0.10);
+  --chip-hover: rgba(255, 255, 255, 0.17);
+  --chip-rim: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  --sheet: rgba(20, 20, 19, 0.24);
   --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.5),
                   0 8px 28px rgba(0, 0, 0, 0.45),
                   0 24px 64px rgba(0, 0, 0, 0.35);
@@ -447,21 +460,78 @@ code {
 
 .card-settings {
   display: flex; flex-wrap: wrap; gap: 8px 12px;
-  padding: 10px 14px;
-  background: color-mix(in srgb, var(--sunken) 55%, transparent);
-  border-bottom: 1px solid var(--glass-edge);
-  flex: 0 0 auto;
-  max-height: 40%;
+  padding: 12px 13px;
+  gap: 8px;
+  background: var(--sheet);
+  /* One blur layer here, not one per chip: the sheet already sits inside a
+     blurred card, and stacking filters per control is real GPU cost for an
+     effect nobody can see through two layers anyway. */
+  -webkit-backdrop-filter: saturate(200%) blur(34px);
+  backdrop-filter: saturate(200%) blur(34px);
+  border: 1px solid var(--glass-edge);
+  border-radius: 16px;
+  box-shadow: var(--glass-rim), 0 10px 34px rgba(0, 0, 0, 0.22);
+
+  /* Floats over the card rather than pushing it: opening settings shouldn't
+     resize the map underneath, and a sheet that squeezes its own content ends
+     up clipping the last row of controls. */
+  position: absolute;
+  top: 44px; left: 8px; right: 8px;
+  z-index: 30;
+  max-height: calc(100% - 56px);
   overflow-y: auto;
+  animation: sheet-in 160ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
-.card-settings label { display: flex; flex-direction: column; gap: 3px; }
+
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-settings { animation: none; }
+}
+.card-settings label {
+  display: flex; flex-direction: column; gap: 3px;
+  background: var(--chip);
+  border: 1px solid var(--glass-edge);
+  border-radius: 14px;
+  padding: 7px 12px 8px;
+  box-shadow: var(--chip-rim);
+  transition: background 140ms ease;
+}
+.card-settings label:hover { background: var(--chip-hover); }
+
+/* The control sits *in* the tile rather than being a bordered box within it. */
+.card-settings select,
+.card-settings input[type='text'] {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 1px 0 0;
+  border-radius: 0;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--ink-primary);
+  min-width: 96px;
+}
+.card-settings select:focus,
+.card-settings input[type='text']:focus { outline: none; }
+.card-settings select[multiple] {
+  background: transparent;
+  margin-top: 3px;
+  font-weight: 400;
+}
 .card-settings label.wide { flex: 1 1 100%; }
 .card-settings label > span {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
+  font-size: 9.5px; font-weight: 650; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--ink-muted);
 }
 .card-settings select[multiple] { min-width: 180px; }
-.card-settings input[type='range'] { width: 96px; accent-color: var(--accent); }
+.card-settings input[type='range'] {
+  width: 104px; accent-color: var(--accent);
+  margin: 4px 0 1px;
+}
 
 .card-body { flex: 1; min-height: 0; position: relative; }
 
@@ -823,7 +893,7 @@ code {
 
 /* ── symbology controls ─────────────────────────────────────────────────── */
 
-.swatch-row { display: flex; gap: 4px; flex-wrap: wrap; max-width: 168px; }
+.swatch-row { display: flex; gap: 5px; flex-wrap: wrap; max-width: 172px; margin-top: 3px; }
 .swatch-btn {
   width: 18px; height: 18px;
   border-radius: 5px;
@@ -836,8 +906,10 @@ code {
   outline-offset: 1px;
 }
 .card-settings label.checkbox {
-  flex-direction: row; align-items: center; gap: 6px;
+  flex-direction: row-reverse; align-items: center; gap: 8px;
+  padding: 10px 12px;
 }
+.card-settings label.checkbox > span { font-size: 9.5px; }
 .card-settings label.checkbox input { accent-color: var(--accent); }
 
 .legend-count { color: var(--ink-muted); margin-left: auto; padding-left: 8px; }
