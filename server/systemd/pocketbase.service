@@ -1,0 +1,28 @@
+[Unit]
+Description=PocketBase (Geo Insights backend)
+After=network.target
+
+[Service]
+Type=simple
+User=pocketbase
+Group=pocketbase
+WorkingDirectory=/opt/pocketbase
+# Bound to loopback: nginx is the only way in, so TLS and access control
+# live in one place rather than two.
+ExecStart=/opt/pocketbase/pocketbase serve --http=127.0.0.1:8090
+Restart=always
+RestartSec=5
+
+# It only ever needs to write its own data directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/pocketbase/pb_data
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
