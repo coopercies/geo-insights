@@ -11,6 +11,10 @@ import AccountBar from './components/AccountBar.jsx';
 import ShareDialog from './components/ShareDialog.jsx';
 import PageTabs from './components/PageTabs.jsx';
 import OpenDialog from './components/OpenDialog.jsx';
+import {
+  loadSession, clearSession, createAutosave,
+  markRestoring, clearRestoring, crashedWhileRestoring,
+} from './lib/session.js';
 
 export default function App() {
   const route = useRef(parseRoute()).current;
@@ -185,6 +189,48 @@ function Editor() {
     };
   }, [handleFiles]);
 
+  // Restore the last session, so a reload — including one the app itself
+  // suggested — doesn't empty the canvas.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+
+    // A session that crashed the app on the previous boot is dropped rather
+    // than replayed into the same crash.
+    if (crashedWhileRestoring()) {
+      clearRestoring();
+      clearSession();
+      setStatus({ kind: 'error', text: 'The last session could not be restored, so it was cleared.' });
+      return;
+    }
+
+    // An explicit ?data= link means "show me this", not "resume what I had".
+    if (new URLSearchParams(window.location.search).get('data')) return;
+
+    loadSession().then((session) => {
+      if (!session || useStore.getState().cards.length) return;
+      markRestoring();
+      loadProject(session);
+      clearRestoring();
+      setStatus({
+        kind: 'ok',
+        text: `Restored your last dashboard — ${session.cards.length} cards, ${session.datasets.length} layers.`,
+      });
+    });
+  }, [loadProject, setStatus]);
+
+  // Autosave every change, debounced.
+  useEffect(() => {
+    const autosave = createAutosave(() => {
+      const s = useStore.getState();
+      return { datasets: s.datasets, cards: s.cards, layout: s.layout, pages: s.pages };
+    });
+    const run = () => autosave((text) => setStatus({ kind: 'error', text }));
+    run();
+    return useStore.subscribe(run);
+  }, [setStatus]);
+
   // ?data=<url> loads a layer at startup, so a published dashboard can carry
   // its own data without bundling it.
   useEffect(() => {
@@ -246,7 +292,8 @@ function Editor() {
             Export
           </button>
           <button onClick={() => {
-            if (cards.length && !confirm('Clear the current dashboard?')) return;
+            if (cards.length && !confirm('Clear the current dashboard? Anything unsaved is lost.')) return;
+            clearSession();
             reset();
           }}>New</button>
           <button className="mode-toggle" title="Toggle light/dark"

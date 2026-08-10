@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { clearSession } from '../lib/session.js';
 
 /**
  * A thrown render error unmounts the whole React tree, which looks to the user
@@ -29,15 +30,19 @@ export default class ErrorBoundary extends Component {
       <div className="crash">
         <div className="crash-card">
           <h2>Something broke while rendering</h2>
-          <p>
-            The dashboard hit an error it couldn't recover from. Your data is only in
-            this page's memory, so reloading starts over — but the details below are
-            worth reporting.
-          </p>
+          <p>The dashboard hit an error it couldn't recover from.</p>
           <pre>{error.message}</pre>
+          <p>
+            Your dashboard is saved as you work, so reloading brings it back. If the
+            same error returns immediately, the saved dashboard is what triggers it —
+            start fresh to discard it.
+          </p>
           <div className="crash-actions">
             <button className="btn-primary" onClick={this.reset}>Try again</button>
             <button onClick={() => window.location.reload()}>Reload the page</button>
+            <button onClick={async () => { await clearSession(); window.location.reload(); }}>
+              Start fresh
+            </button>
           </div>
         </div>
       </div>
