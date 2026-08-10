@@ -143,9 +143,12 @@ Deployed from a subdirectory rather than a domain root, set `base` in
 
 - **GeoPackage isn't supported.** It's a SQLite database and needs a heavy parser;
   export to GeoJSON from QGIS instead.
-- **Coordinates must be WGS84 (EPSG:4326).** Projected data won't line up —
-  reproject before importing. CSV lat/lon values outside ±90/±180 are skipped for
-  this reason.
+- **Coordinates must be WGS84 (EPSG:4326).** Projected data is detected on load
+  and reported per layer — attributes still drive charts, tables and statistics,
+  but the map asks you to reproject. Web Mercator is converted automatically
+  *only* when the file declares EPSG:3857: its extent overlaps State Plane and
+  UTM, so guessing from the numbers would silently move data to the wrong place.
+  CSV lat/lon values outside ±90/±180 are skipped for the same reason.
 - **Cross-filtering works within a dataset**, not across two datasets. Join your
   layers before importing if you need one selection to drive both.
 - Very large layers (100k+ features) will feel slow; the whole dataset lives in

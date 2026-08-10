@@ -102,6 +102,75 @@ function parseJSON(text, name) {
   }
 }
 
+// Web Mercator's extent, in metres — the edge of the projection.
+const MERCATOR_EXTENT = 20037508.34;
+const MERCATOR_MAX_Y = 20048966.1;
+const EARTH_R = 6378137;
+
+/** EPSG code from a GeoJSON crs member, in any of the forms exporters emit. */
+export function declaredEpsg(input) {
+  const name = input && input.crs && input.crs.properties &&
+    (input.crs.properties.name || input.crs.properties.href);
+  if (!name) return null;
+  const m = String(name).match(/(?:EPSG:{1,2}|epsg\/0\/)(\d+)/i);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Whether coordinates are degrees, and if not, whether we can safely convert.
+ *
+ * Magnitude alone cannot identify Web Mercator: its ±20,037,508 m extent
+ * contains State Plane feet and UTM metres too, so "large numbers" would
+ * happily convert a State Plane layer and drop it somewhere in the ocean with
+ * no error at all. Converting therefore requires the file to *say* it is Web
+ * Mercator; everything else is reported rather than guessed.
+ */
+export function detectCrs(bbox, epsg = null) {
+  if (!bbox) return 'wgs84';
+  const [minX, minY, maxX, maxY] = bbox;
+  const degrees = Math.abs(minX) <= 180 && Math.abs(maxX) <= 180 &&
+                  Math.abs(minY) <= 90 && Math.abs(maxY) <= 90;
+  if (degrees) return 'wgs84';
+
+  const declaredMercator = epsg === 3857 || epsg === 900913 || epsg === 102100;
+  const withinMercator =
+    Math.abs(minX) <= MERCATOR_EXTENT * 1.001 && Math.abs(maxX) <= MERCATOR_EXTENT * 1.001 &&
+    Math.abs(minY) <= MERCATOR_MAX_Y * 1.001 && Math.abs(maxY) <= MERCATOR_MAX_Y * 1.001;
+
+  return declaredMercator && withinMercator ? 'webmercator' : 'projected';
+}
+
+/**
+ * Web Mercator is unambiguous from its extent alone, and extremely common in
+ * exports, so convert it rather than making the user go back and redo it.
+ * Anything else needs projection parameters we cannot infer.
+ */
+function reprojectWebMercator(fc) {
+  const convert = (coords) => {
+    if (typeof coords[0] === 'number') {
+      const [x, y] = coords;
+      return [
+        (x / EARTH_R) * (180 / Math.PI),
+        (2 * Math.atan(Math.exp(y / EARTH_R)) - Math.PI / 2) * (180 / Math.PI),
+      ];
+    }
+    return coords.map(convert);
+  };
+  for (const f of fc.features) {
+    if (f.geometry && f.geometry.coordinates) f.geometry.coordinates = convert(f.geometry.coordinates);
+  }
+  return fc;
+}
+
+/** A readable hint at what the numbers probably are. */
+function describeUnits(bbox) {
+  const span = Math.max(Math.abs(bbox[2] - bbox[0]), Math.abs(bbox[3] - bbox[1]));
+  const magnitude = Math.max(Math.abs(bbox[0]), Math.abs(bbox[1]));
+  if (magnitude > 1e6 && span < 1e6) return 'feet (a State Plane or similar grid)';
+  if (magnitude > 1e5) return 'metres (a UTM or national grid)';
+  return 'a projected grid';
+}
+
 function stripExt(n) {
   return n.replace(/\.[^.]+$/, '');
 }
@@ -114,6 +183,7 @@ function mergeCollections(list) {
 }
 
 export function fromGeoJSON(input, name, hash = null) {
+  const epsg = declaredEpsg(input);
   let features;
   if (input.type === 'FeatureCollection') features = input.features || [];
   else if (input.type === 'Feature') features = [input];
@@ -135,7 +205,7 @@ export function fromGeoJSON(input, name, hash = null) {
   }
 
   const geojson = { type: 'FeatureCollection', features: outFeatures };
-  return finalize({ name, rows, geojson, hash });
+  return finalize({ name, rows, geojson, hash, epsg });
 }
 
 export function fromCSV(text, name, delimiter, hash = null) {
@@ -182,17 +252,36 @@ function pickCoord(headers, candidates) {
   return null;
 }
 
-function finalize({ name, rows, geojson, hash = null, coordFields = null }) {
+function finalize({ name, rows, geojson, hash = null, coordFields = null, epsg = null }) {
   const fields = inferFields(rows);
-  const geometryType = geojson ? dominantGeometry(geojson) : null;
+  let bbox = geojson ? computeBBox(geojson) : null;
+  let projected = null;
+
+  if (geojson && bbox) {
+    const crs = detectCrs(bbox, epsg);
+    if (crs === 'webmercator') {
+      reprojectWebMercator(geojson);
+      bbox = computeBBox(geojson);
+    } else if (crs === 'projected') {
+      // Attributes are still perfectly usable in charts, tables and statistics,
+      // so keep the layer and mark the geometry rather than refusing the file.
+      projected = {
+        units: describeUnits(bbox),
+        sample: [Math.round(bbox[0]), Math.round(bbox[1])],
+        epsg,
+      };
+    }
+  }
+
   return {
     id: nextId(),
     name,
     hash,
     rows,
     geojson,
-    geometryType,
-    bbox: geojson ? computeBBox(geojson) : null,
+    geometryType: geojson && !projected ? dominantGeometry(geojson) : null,
+    bbox: projected ? null : bbox,
+    projected,
     fields,
     coordFields,
   };

@@ -137,12 +137,21 @@ function Editor() {
           const warning = sizeVerdict(file.size, file.name).warning;
           const ds = await ingestFile(file);
           addDataset(ds);
-          setStatus({
-            kind: 'ok',
-            text: warning
-              ? `Added ${ds.name} — ${ds.rows.length.toLocaleString()} rows. ${warning}`
-              : `Added ${ds.name} — ${ds.rows.length.toLocaleString()} rows, ${ds.fields.length} fields`,
-          });
+          if (ds.projected) {
+            setStatus({
+              kind: 'error',
+              text: `${ds.name} loaded, but its coordinates aren't latitude/longitude — ` +
+                `they look like ${ds.projected.units}. Charts and tables work; the map ` +
+                `needs it reprojected to EPSG:4326.`,
+            });
+          } else {
+            setStatus({
+              kind: 'ok',
+              text: warning
+                ? `Added ${ds.name} — ${ds.rows.length.toLocaleString()} rows. ${warning}`
+                : `Added ${ds.name} — ${ds.rows.length.toLocaleString()} rows, ${ds.fields.length} fields`,
+            });
+          }
         } catch (err) {
           setStatus({ kind: 'error', text: err.message });
         }

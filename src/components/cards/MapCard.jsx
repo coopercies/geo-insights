@@ -418,8 +418,15 @@ export default function MapCard({ card }) {
     const map = mapRef.current;
     if (!map || !ready || !dataset || !dataset.bbox) return;
     if (fittedRef.current === dataset.id) return;
-    fittedRef.current = dataset.id;
     const [minX, minY, maxX, maxY] = dataset.bbox;
+    // Defence in depth: an out-of-range extent makes fitBounds throw, and that
+    // exception used to escape as a raw MapLibre message on a dead card.
+    if (![minX, minY, maxX, maxY].every(Number.isFinite) ||
+        Math.abs(minY) > 90 || Math.abs(maxY) > 90 ||
+        Math.abs(minX) > 180 || Math.abs(maxX) > 180) {
+      return;
+    }
+    fittedRef.current = dataset.id;
     map.fitBounds([[minX, minY], [maxX, maxY]], { padding: 32, duration: 0, maxZoom: 14 });
   }, [ready, dataset]);
 
@@ -597,6 +604,29 @@ export default function MapCard({ card }) {
   }, []);
 
   if (!dataset) return <div className="card-empty">No dataset bound to this map.</div>;
+
+  // Caught here rather than letting MapLibre throw "Invalid LngLat latitude
+  // value" from inside fitBounds, which says nothing about the actual problem.
+  if (dataset.projected) {
+    return (
+      <div className="card-empty">
+        <strong>{dataset.name} isn’t in latitude/longitude</strong>
+        <span>
+          Its coordinates look like {dataset.projected.units} — around{' '}
+          {dataset.projected.sample[0].toLocaleString()},{' '}
+          {dataset.projected.sample[1].toLocaleString()} rather than degrees. GeoJSON is
+          meant to be WGS84 (EPSG:4326), and this file declares no CRS, so nothing
+          converted it.
+        </span>
+        <span>
+          Reproject it and load it again — in QGIS, right-click the layer →{' '}
+          <em>Export → Save Features As</em> and set CRS to EPSG:4326. The attributes
+          still work in charts, tables and statistics meanwhile.
+        </span>
+      </div>
+    );
+  }
+
   if (!dataset.geojson) {
     return (
       <div className="card-empty">
