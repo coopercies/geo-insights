@@ -134,6 +134,9 @@ export default function MapCard({ card }) {
   // layers on tiles means a blocked basemap host costs you your own data too.
   const [ready, setReady] = useState(false);
   const [tilesOk, setTilesOk] = useState(false);
+  // Bumped whenever a style swap has wiped our layers, so the layer effect
+  // re-runs and rebuilds them.
+  const [styleEpoch, setStyleEpoch] = useState(0);
   const [hover, setHover] = useState(null);
   const [trouble, setTrouble] = useState(null);
   const [slowTiles, setSlowTiles] = useState(false);
@@ -233,14 +236,18 @@ export default function MapCard({ card }) {
       appliedStyleRef.current = styleKey;
       map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
 
-      // styledata fires once the stylesheet is parsed — early enough to add our
-      // sources and layers, and it doesn't depend on any tile arriving.
+      // styledata fires whenever style data changes — including several times
+      // during a setStyle, while the old style is still being torn down. So
+      // rather than trusting one event to mean "the new style is ready", treat
+      // a missing source as the signal that our layers need rebuilding. That
+      // converges no matter how many intermediate events arrive, and it fixes
+      // the theme/basemap switch silently dropping the data layer.
       map.on('styledata', () => {
         const style = map.getStyle();
-        if (style && style.layers) {
-          setReady(true);
-          setTrouble(null);
-        }
+        if (!style || !style.layers) return;
+        setReady(true);
+        setTrouble(null);
+        if (!map.getSource(SRC)) setStyleEpoch((v) => v + 1);
       });
       map.on('load', () => setTilesOk(true));
 
@@ -370,7 +377,7 @@ export default function MapCard({ card }) {
       map.setPaintProperty('lyr-hi', 'circle-stroke-width', 2.5);
       map.setPaintProperty('lyr-hi', 'circle-stroke-color', stroke.strong);
     }
-  }, [ready, dataset, colorMode, colorField, breaks, colors, categories, categoryIndex,
+  }, [ready, styleEpoch, dataset, colorMode, colorField, breaks, colors, categories, categoryIndex,
       singleColor, sizeField, sizeRange, mode, basemap, card.config.opacity]);
 
   // Fit to data the first time a layer lands.
