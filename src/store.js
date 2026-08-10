@@ -11,6 +11,10 @@ const nextCardId = () => `card${++cardSeq}`;
  * selecting on any card drives all the others.
  */
 const initialState = {
+  // A published dashboard is rendered by the same components as the editor;
+  // this flag is what removes the editing affordances rather than a separate
+  // read-only copy of every card.
+  readOnly: false,
   datasets: [],
   cards: [],
   layout: [],
@@ -22,6 +26,10 @@ const initialState = {
 
 export const useStore = create((set, get) => ({
   ...initialState,
+
+  setReadOnly(readOnly) {
+    set({ readOnly });
+  },
 
   setMode(mode) {
     document.documentElement.dataset.theme = mode;
@@ -134,7 +142,7 @@ export const useStore = create((set, get) => ({
   },
 
   reset() {
-    set({ ...initialState, mode: get().mode });
+    set({ ...initialState, mode: get().mode, readOnly: get().readOnly });
   },
 }));
 

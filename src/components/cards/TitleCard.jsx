@@ -17,6 +17,7 @@ const ALIGN = ['left', 'center', 'right'];
  */
 export default function TitleCard({ card }) {
   const updateCard = useStore((s) => s.updateCard);
+  const readOnly = useStore((s) => s.readOnly);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(card.config.text ?? '');
   const inputRef = useRef(null);
@@ -59,7 +60,7 @@ export default function TitleCard({ card }) {
   return (
     <div
       className={`title-card title-${size} align-${align}`}
-      onDoubleClick={() => { setDraft(card.config.text ?? ''); setEditing(true); }}
+      onDoubleClick={() => { if (readOnly) return; setDraft(card.config.text ?? ''); setEditing(true); }}
       title="Double-click to edit"
     >
       <div className="title-text">{card.config.text || 'Double-click to add a title'}</div>

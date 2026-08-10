@@ -8,11 +8,14 @@ import { useSize } from './useSize.js';
 const GRID_CONFIG = { cols: 12, rowHeight: 28, margin: [14, 14] };
 const DRAG_CONFIG = { handle: '.card-drag-handle' };
 const RESIZE_CONFIG = { handles: ['se'] };
+const DRAG_LOCKED = { enabled: false };
+const RESIZE_LOCKED = { enabled: false, handles: [] };
 
 export default function Canvas() {
   const cards = useStore((s) => s.cards);
   const layout = useStore((s) => s.layout);
   const setLayout = useStore((s) => s.setLayout);
+  const readOnly = useStore((s) => s.readOnly);
   const [ref, size] = useSize();
 
   return (
@@ -23,8 +26,8 @@ export default function Canvas() {
           layout={layout}
           width={size.width}
           gridConfig={GRID_CONFIG}
-          dragConfig={DRAG_CONFIG}
-          resizeConfig={RESIZE_CONFIG}
+          dragConfig={readOnly ? DRAG_LOCKED : DRAG_CONFIG}
+          resizeConfig={readOnly ? RESIZE_LOCKED : RESIZE_CONFIG}
           onLayoutChange={setLayout}
         >
           {cards.map((card) => (

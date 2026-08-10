@@ -6,6 +6,7 @@ marked.setOptions({ breaks: true });
 
 export default function TextCard({ card }) {
   const updateCard = useStore((s) => s.updateCard);
+  const readOnly = useStore((s) => s.readOnly);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(card.config.markdown ?? '');
   const areaRef = useRef(null);
@@ -43,7 +44,7 @@ export default function TextCard({ card }) {
   return (
     <div
       className="text-card"
-      onDoubleClick={() => { setDraft(card.config.markdown ?? ''); setEditing(true); }}
+      onDoubleClick={() => { if (readOnly) return; setDraft(card.config.markdown ?? ''); setEditing(true); }}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

@@ -701,3 +701,17 @@ code {
 .legend-count { color: var(--ink-muted); margin-left: auto; padding-left: 8px; }
 .map-legend-row { gap: 6px; }
 .map-legend-size svg { color: var(--ink-secondary); display: block; }
+
+.view-badge {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  align-self: center;
+}
+
+/* A published title or note is the content, not a card with a header. */
+.card-bare { background: transparent; border-color: transparent; box-shadow: none; }

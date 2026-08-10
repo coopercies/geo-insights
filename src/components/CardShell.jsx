@@ -30,6 +30,7 @@ export default function CardShell({ card }) {
   const removeCard = useStore((s) => s.removeCard);
   const duplicateCard = useStore((s) => s.duplicateCard);
   const datasets = useStore((s) => s.datasets);
+  const readOnly = useStore((s) => s.readOnly);
   const dataset = datasets.find((d) => d.id === card.datasetId);
 
   const Body = {
@@ -37,22 +38,30 @@ export default function CardShell({ card }) {
     text: TextCard, table: TableCard, title: TitleCard,
   }[card.type];
 
+  // In a published view, title and text cards are the content — a header bar
+  // labelled "Title" above a title is just chrome.
+  const bareCard = readOnly && ['title', 'text'].includes(card.type) && !card.config.title;
+
   return (
-    <div className="card">
-      <header className="card-head card-drag-handle">
+    <div className={`card${bareCard ? ' card-bare' : ''}`}>
+      {!bareCard && (
+      <header className={`card-head${readOnly ? '' : ' card-drag-handle'}`}>
         <span className="card-title">
           {card.config.title || TITLES[card.type]}
           {dataset && <span className="card-source"> · {dataset.name}</span>}
         </span>
-        <span className="card-actions">
-          {!['text'].includes(card.type) && (
-            <button title="Settings" onClick={() => setOpen((v) => !v)} className={open ? 'on' : ''}>⚙</button>
-          )}
-          <button title="Duplicate" onClick={() => duplicateCard(card.id)}>⧉</button>
-          <button title="Remove" onClick={() => removeCard(card.id)}>✕</button>
-        </span>
+        {!readOnly && (
+          <span className="card-actions">
+            {!['text'].includes(card.type) && (
+              <button title="Settings" onClick={() => setOpen((v) => !v)} className={open ? 'on' : ''}>⚙</button>
+            )}
+            <button title="Duplicate" onClick={() => duplicateCard(card.id)}>⧉</button>
+            <button title="Remove" onClick={() => removeCard(card.id)}>✕</button>
+          </span>
+        )}
       </header>
-      {open && <Settings card={card} dataset={dataset} onClose={() => setOpen(false)} />}
+      )}
+      {open && !readOnly && <Settings card={card} dataset={dataset} onClose={() => setOpen(false)} />}
       <div className="card-body">
         {/* Per-card, so one bad card can't take the whole dashboard down. */}
         <ErrorBoundary

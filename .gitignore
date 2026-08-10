@@ -33,3 +33,6 @@ public/*.zip
 
 # Deploy target — server address stays out of the public repo
 .env.deploy
+
+# Published dashboards hold real data — never commit them
+public/shared/

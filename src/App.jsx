@@ -4,8 +4,93 @@ import Canvas from './components/Canvas.jsx';
 import { useStore } from './store.js';
 import { ingestFile, ingestUrl, sizeVerdict } from './lib/ingest.js';
 import { downloadProject, readProject, sizeWarning, isProjectFile } from './lib/project.js';
+import { parseRoute } from './lib/router.js';
+import { loadSharedProject } from './lib/share.js';
 
 export default function App() {
+  const route = useRef(parseRoute()).current;
+  return route.name === 'view' ? <SharedDashboard shareId={route.shareId} /> : <Editor />;
+}
+
+/** A published dashboard: same cards, same interactions, nothing editable. */
+function SharedDashboard({ shareId }) {
+  const [state, setState] = useState({ status: 'loading', error: null, title: null });
+  const cards = useStore((s) => s.cards);
+  const selection = useStore((s) => s.selection);
+  const mode = useStore((s) => s.mode);
+  const setMode = useStore((s) => s.setMode);
+  const clearSelection = useStore((s) => s.clearSelection);
+  const loadProject = useStore((s) => s.loadProject);
+  const setReadOnly = useStore((s) => s.setReadOnly);
+  const loadedRef = useRef(false);
+
+  useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+    setReadOnly(true);
+    loadSharedProject(shareId)
+      .then((project) => {
+        loadProject(project);
+        setState({ status: 'ready', error: null, title: project.title });
+      })
+      .catch((err) => setState({ status: 'error', error: err.message, title: null }));
+  }, [shareId, loadProject, setReadOnly]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') clearSelection(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [clearSelection]);
+
+  if (state.status === 'error') {
+    return (
+      <div className="app">
+        <div className="empty-state">
+          <div className="empty-card">
+            <h1>Dashboard unavailable</h1>
+            <p>{state.error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark" />
+          {state.title || 'Geo Insights'}
+        </div>
+        <div className="topbar-center">
+          {selection ? (
+            <div className="selection-pill">
+              <strong>{selection.label}</strong>
+              <button onClick={clearSelection} title="Clear selection (Esc)">clear</button>
+            </div>
+          ) : (
+            cards.length > 0 && <span className="topbar-quiet">select on any card to filter the rest</span>
+          )}
+        </div>
+        <div className="topbar-actions">
+          <span className="view-badge">shared view</span>
+          <button className="mode-toggle" title="Toggle light/dark"
+                  onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')}>
+            {mode === 'dark' ? '☀' : '☾'}
+          </button>
+        </div>
+      </header>
+
+      <div className="main">
+        {state.status === 'loading'
+          ? <div className="empty-state"><div className="empty-card"><h1>Loading dashboard…</h1></div></div>
+          : <Canvas />}
+      </div>
+    </div>
+  );
+}
+
+function Editor() {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const urlLoadedRef = useRef(false);
