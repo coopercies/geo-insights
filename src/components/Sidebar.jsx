@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useStore } from '../store.js';
+import ReprojectDialog from './ReprojectDialog.jsx';
 
 const CARD_BUTTONS = [
   { type: 'map', label: 'Map', icon: '🗺', needsGeo: true },
@@ -18,6 +19,7 @@ export default function Sidebar({ onFiles }) {
   const setStatus = useStore((s) => s.setStatus);
   const inputRef = useRef(null);
   const [expanded, setExpanded] = useState(null);
+  const [reprojecting, setReprojecting] = useState(null);
 
   const active = datasets.find((d) => d.id === activeDatasetId) ?? datasets[0];
 
@@ -48,11 +50,18 @@ export default function Sidebar({ onFiles }) {
                 <span className="dataset-name" title={d.name}>{d.name}</span>
                 <span className="dataset-meta">
                   {d.rows.length.toLocaleString()}
-                  {d.geometryType ? ` · ${d.geometryType}` : ' · no geometry'}
+                  {d.projected ? ' · needs reprojecting' : d.geometryType ? ` · ${d.geometryType}` : ' · no geometry'}
                 </span>
                 <button className="icon-btn" title="Remove dataset"
                         onClick={(e) => { e.stopPropagation(); removeDataset(d.id); }}>✕</button>
               </div>
+              {expanded === d.id && d.projected && (
+                <div className="dataset-fix">
+                  <button className="btn-primary full" onClick={(e) => { e.stopPropagation(); setReprojecting(d); }}>
+                    Reproject to lat/long…
+                  </button>
+                </div>
+              )}
               {expanded === d.id && (
                 <ul className="field-list">
                   {d.fields.map((f) => (
@@ -99,6 +108,10 @@ export default function Sidebar({ onFiles }) {
           })}
         </div>
       </div>
+
+      {reprojecting && (
+        <ReprojectDialog dataset={reprojecting} onClose={() => setReprojecting(null)} />
+      )}
     </aside>
   );
 }

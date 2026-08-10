@@ -1196,3 +1196,28 @@ code {
 }
 
 .open-file { border-top: 1px solid var(--glass-edge); padding-top: 16px; }
+
+/* ── reproject dialog ───────────────────────────────────────────────────── */
+
+.crs-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.crs-option {
+  width: 100%;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  background: var(--chip);
+  border: 1px solid var(--glass-edge);
+  border-radius: 11px;
+  padding: 9px 12px;
+  text-align: left;
+  box-shadow: none;
+}
+.crs-option:hover { background: var(--chip-hover); }
+.crs-option.on { border-color: var(--accent); background: var(--accent-soft); }
+.crs-name { font-size: 12.5px; font-weight: 600; color: var(--ink-primary); }
+.crs-label { font-weight: 400; color: var(--ink-secondary); }
+.crs-meta { font-size: 11px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.crs-good { color: #0ca30c; font-weight: 550; }
+.crs-far { color: var(--ink-muted); }
+.crs-manual { margin-bottom: 14px; }
+
+.dataset-fix { padding: 8px; border-top: 1px solid var(--glass-edge); }
+.dataset-fix button { font-size: 12px; padding: 7px 10px; }

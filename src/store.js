@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { currentMode } from './lib/palette.js';
+import { computeBBox, dominantGeometry } from './lib/ingest.js';
 
 let cardSeq = 0;
 const nextCardId = () => `card${++cardSeq}`;
@@ -142,6 +143,26 @@ export const useStore = create((set, get) => ({
       get().addCard('stat', ds.id);
     }
     return ds.id;
+  },
+
+  /** Swap in reprojected geometry; the attributes are untouched. */
+  reprojectDataset(id, geojson, epsg) {
+    set((s) => ({
+      datasets: s.datasets.map((d) =>
+        d.id === id
+          ? {
+              ...d,
+              geojson,
+              bbox: computeBBox(geojson),
+              rawBbox: computeBBox(geojson),
+              geometryType: dominantGeometry(geojson),
+              projected: null,
+              // Different bytes now, so it must not dedupe against the original.
+              hash: d.hash ? `${d.hash}-epsg${epsg}` : null,
+            }
+          : d
+      ),
+    }));
   },
 
   removeDataset(id) {

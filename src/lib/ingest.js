@@ -281,13 +281,16 @@ function finalize({ name, rows, geojson, hash = null, coordFields = null, epsg =
     geojson,
     geometryType: geojson && !projected ? dominantGeometry(geojson) : null,
     bbox: projected ? null : bbox,
+    // The untouched extent, in whatever units the file used — reprojection
+    // needs it to test candidate systems.
+    rawBbox: bbox,
     projected,
     fields,
     coordFields,
   };
 }
 
-function dominantGeometry(fc) {
+export function dominantGeometry(fc) {
   for (const f of fc.features) {
     const t = f.geometry && f.geometry.type;
     if (!t) continue;

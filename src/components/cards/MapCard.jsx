@@ -6,6 +6,7 @@ import { classBreaks, categoryClasses } from '../../lib/classify.js';
 import { numericValues, formatValue } from '../../lib/stats.js';
 import { toNumber } from '../../lib/fields.js';
 import { resolveBasemap, basemapKey, isImagery } from '../../lib/basemaps.js';
+import ReprojectDialog from '../ReprojectDialog.jsx';
 
 const SRC = 'data';
 const CLASS_COUNT_DEFAULT = 5;
@@ -140,6 +141,7 @@ export default function MapCard({ card }) {
   const [hover, setHover] = useState(null);
   const [trouble, setTrouble] = useState(null);
   const [slowTiles, setSlowTiles] = useState(false);
+  const [reprojecting, setReprojecting] = useState(false);
 
   const datasets = useStore((s) => s.datasets);
   const selection = useStore((s) => s.selection);
@@ -619,10 +621,14 @@ export default function MapCard({ card }) {
           converted it.
         </span>
         <span>
-          Reproject it and load it again — in QGIS, right-click the layer →{' '}
-          <em>Export → Save Features As</em> and set CRS to EPSG:4326. The attributes
-          still work in charts, tables and statistics meanwhile.
+          Its attributes already work in charts, tables and statistics.
         </span>
+        <button className="btn-primary" onClick={() => setReprojecting(true)}>
+          Reproject to lat/long…
+        </button>
+        {reprojecting && (
+          <ReprojectDialog dataset={dataset} onClose={() => setReprojecting(false)} />
+        )}
       </div>
     );
   }
